@@ -52,7 +52,7 @@ nav a {
 }
 nav a:hover { color: var(--accent); }
 
-main { padding: 1.5rem 2rem 4rem; max-width: 900px; margin: 0 auto; }
+main { padding: 1.5rem 2rem 4rem; max-width: 1400px; margin: 0 auto; }
 h1, h2 { font-weight: 700; }
 h1 { letter-spacing: 0.2px; }
 code, pre, .mono { font-family: var(--font-mono); }
@@ -60,7 +60,7 @@ code, pre, .mono { font-family: var(--font-mono); }
 .table-wrap { overflow-x: auto; margin-bottom: 1.5rem; }
 table { border-collapse: collapse; width: 100%; }
 .table-wrap table { min-width: 620px; }
-table.kv { table-layout: fixed; margin-bottom: 1.5rem; }
+table.kv { table-layout: fixed; margin-bottom: 1.5rem; max-width: 700px; }
 td, th { word-break: break-word; }
 th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); }
 th { color: var(--muted); font-weight: 600; }
