@@ -25,10 +25,14 @@ services:
       # use — the web UI and `./fleetctl` on the host share one database.
       - .:/app
     environment:
-      # Uncomment both to require HTTP Basic Auth. Recommended even on
-      # localhost if this machine has other users.
-      # - FLEETCTL_WEB_USER=admin
-      # - FLEETCTL_WEB_PASSWORD=change-me
+      # Set both to require HTTP Basic Auth. Recommended even on localhost
+      # if this machine has other users. These reference shell/.env vars
+      # (not literal values) so this file stays safe to commit — put the
+      # actual values in a local .env file (gitignored) or export them in
+      # the shell that runs `docker compose up`. Left unset, the app falls
+      # back to no-auth and logs a warning on startup, it won't crash.
+      - FLEETCTL_WEB_USER=${FLEETCTL_WEB_USER:-}
+      - FLEETCTL_WEB_PASSWORD=${FLEETCTL_WEB_PASSWORD:-}
       - FLEETCTL_WEB_PORT=4299
       # Required — the DB is encrypted at rest (see fleetlib.py). Generate
       # one with `fleetctl gen-key`, save it in a password manager (NOT in
