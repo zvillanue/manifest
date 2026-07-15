@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Register a build</h1>
+<form method="post">
+  <label>Build id <input type="text" name="build_id" required placeholder="laptop-tier1-mint-v1"></label>
+  <label>Product line
+    <select name="line" required><option value="laptop">laptop</option><option value="pixel">pixel</option></select>
+  </label>
+  <label>Tier
+    <select name="tier"><option value="">(none)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+  </label>
+  <label>Script/doc
+    <select name="script_path">
+      <option value="">-- choose from postinstall/ --</option>
+      {% for f in files %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>...or a custom path <input type="text" name="script_custom" placeholder="postinstall/my-script.sh"></label>
+  <label>Description <input type="text" name="desc"></label>
+  <button type="submit">Register</button>
+</form>
+{% endblock %}

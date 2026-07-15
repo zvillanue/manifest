@@ -1,0 +1,835 @@
+#!/usr/bin/env python3
+"""
+fleetctl — build/inventory tracker for refurbished Linux laptops & GrapheneOS
+Pixels. CLI/TUI logic itself is stdlib-only (argparse, curses), but the
+database is encrypted at rest with SQLCipher, so fleetlib.py (and therefore
+this script) needs `sqlcipher3-binary` — see requirements.txt and README.md.
+Set FLEETCTL_DB_KEY before running anything; `fleetctl gen-key` creates one.
+
+Run with no arguments (or `fleetctl menu`) for an interactive arrow-key menu.
+Run `fleetctl --help` for the scriptable subcommand form, or see README.md.
+There's also a web GUI — see web/app.py and README.md's Docker section.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from fleetlib import (
+    DB_PATH,
+    FleetError,
+    LINE_PREFIXES,
+    STATUS_FLOW,
+    gen_passphrase,  # noqa: F401  (re-exported for anyone importing this module)
+    generate_db_key,
+    get_conn,
+    init_db,
+    op_create_unit,
+    op_get_unit,
+    op_handoff_card,
+    op_import_hardware,
+    op_list_builds,
+    op_list_units,
+    op_purge_secrets,
+    op_register_build,
+    op_repurpose,
+    op_save_checklist,
+    op_sell,
+    op_set_status,
+    op_verify_build,
+    op_warranty,
+    require_db,
+    verify_serial,
+)
+from app_catalog import APPS
+from scriptgen import OS_TARGETS, GenOptions, generate_script
+
+GENERATED_DIR = Path(__file__).resolve().parent / "postinstall" / "generated"
+
+
+# --------------------------------------------------------------------------
+# CLI wiring — thin wrappers: parse args, call the op_ function, print, exit
+# --------------------------------------------------------------------------
+
+def cmd_init(_args: argparse.Namespace) -> None:
+    init_db()
+    print(f"Initialized database at {DB_PATH}")
+
+
+def cmd_gen_key(_args: argparse.Namespace) -> None:
+    key = generate_db_key()
+    print(key)
+    print(file=sys.stderr)
+    print("^ that's your new database encryption key (256-bit, hex-encoded).", file=sys.stderr)
+    print("Save it in a password manager NOW — this is the only time it's printed, and", file=sys.stderr)
+    print("fleetctl does not store it anywhere. There is no recovery if it's lost.", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Then export it before running fleetctl:", file=sys.stderr)
+    print(f"  export FLEETCTL_DB_KEY={key}", file=sys.stderr)
+    print("(put that in your shell profile, or wherever you keep secrets — NOT in this", file=sys.stderr)
+    print("Nextcloud-synced folder).", file=sys.stderr)
+
+
+def cmd_build_register(args: argparse.Namespace) -> None:
+    conn = require_db()
+    rel_path, sha256 = op_register_build(conn, args.id, args.line, args.tier, args.script, args.desc)
+    print(f"Registered build '{args.id}' -> {rel_path} (sha256 {sha256[:12]}...)")
+
+
+def cmd_build_list(_args: argparse.Namespace) -> None:
+    conn = require_db()
+    rows = op_list_builds(conn)
+    if not rows:
+        print("No builds registered yet.")
+        return
+    for r in rows:
+        tier = f" tier {r['tier']}" if r["tier"] else ""
+        print(f"{r['build_id']}  [{r['product_line']}{tier}]")
+        print(f"    script: {r['postinstall_script_path']}  (sha256 {r['script_sha256'][:12]}...)")
+        if r["description"]:
+            print(f"    {r['description']}")
+
+
+def cmd_build_verify(args: argparse.Namespace) -> None:
+    conn = require_db()
+    ok, registered, current = op_verify_build(conn, args.id)
+    if ok:
+        print(f"OK: {args.id} script unchanged since registration.")
+    else:
+        print(f"MISMATCH: {args.id} script has changed since registration!")
+        print(f"  registered sha256: {registered}")
+        print(f"  current sha256:    {current}")
+        sys.exit(1)
+
+
+def _print_new_unit(result: dict) -> None:
+    print(f"Created unit {result['serial']}")
+    print(f"  line/tier:  {result['line']} / tier {result['tier'] or '-'}")
+    print(f"  make/model: {result['make'] or '-'} {result['model'] or '-'}")
+    print(f"  build:      {result['build'] or '-'}")
+    print(f"  mfg date:   {result['mfg_date']}")
+    print("  --- handoff card (temporary — buyer must change all three) ---")
+    print(f"  login passphrase: {result['login_passphrase']}")
+    print(f"  UEFI passphrase:  {result['uefi_passphrase']}")
+    print(f"  LUKS passphrase:  {result['luks_passphrase']}")
+
+
+def cmd_new(args: argparse.Namespace) -> None:
+    conn = require_db()
+    result = op_create_unit(conn, args.line, args.tier, args.make, args.model,
+                             args.build, args.mfg_date, args.words)
+    _print_new_unit(result)
+
+
+def cmd_hardware_import(args: argparse.Namespace) -> None:
+    conn = require_db()
+    backfilled = op_import_hardware(conn, args.serial, args.json_file)
+    print(f"Imported hardware config for {args.serial}"
+          + (" (backfilled make/model from dmidecode)" if backfilled else ""))
+
+
+def cmd_checklist_save(args: argparse.Namespace) -> None:
+    conn = require_db()
+    dest = op_save_checklist(conn, args.serial, args.path)
+    print(f"Saved completed checklist -> {dest}")
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    conn = require_db()
+    op_set_status(conn, args.serial, args.new_status)
+    print(f"{args.serial} -> {args.new_status}")
+
+
+def cmd_sell(args: argparse.Namespace) -> None:
+    conn = require_db()
+    sale_date = op_sell(conn, args.serial, args.date, args.price)
+    print(f"{args.serial} marked Sold on {sale_date}" + (f" for {args.price}" if args.price else ""))
+
+
+def cmd_warranty(args: argparse.Namespace) -> None:
+    conn = require_db()
+    op_warranty(conn, args.serial, args.note)
+    print(f"{args.serial} flagged Warrantied: {args.note}")
+
+
+def cmd_repurpose(args: argparse.Namespace) -> None:
+    conn = require_db()
+    result = op_repurpose(conn, args.serial, args.new_line, args.new_tier, args.build, args.words)
+    print(f"{args.serial} -> Repurposed. New unit {result['serial']} created (linked via repurposed_from).")
+    print("  --- handoff card (temporary — buyer must change all three) ---")
+    print(f"  login passphrase: {result['login_passphrase']}")
+    print(f"  UEFI passphrase:  {result['uefi_passphrase']}")
+    print(f"  LUKS passphrase:  {result['luks_passphrase']}")
+
+
+def cmd_purge_secrets(args: argparse.Namespace) -> None:
+    conn = require_db()
+    op_purge_secrets(conn, args.serial)
+    print(f"Purged stored temp passphrases for {args.serial}")
+
+
+def cmd_show(args: argparse.Namespace) -> None:
+    conn = require_db()
+    unit = op_get_unit(conn, args.serial)
+    d = dict(unit)
+    hw = d.pop("hardware_config_json", None)
+    print(json.dumps(d, indent=2))
+    if hw:
+        print("--- hardware_config ---")
+        print(json.dumps(json.loads(hw), indent=2))
+
+
+def cmd_list(args: argparse.Namespace) -> None:
+    conn = require_db()
+    rows = op_list_units(conn, args.status, args.line)
+    if not rows:
+        print("No units found.")
+        return
+    header = f"{'SERIAL':<20} {'LINE':<7} {'TIER':<5} {'MAKE':<10} {'MODEL':<14} {'STATUS':<11} {'MFG':<11} {'SOLD':<11}"
+    print(header)
+    print("-" * len(header))
+    for r in rows:
+        print(
+            f"{r['serial']:<20} {r['product_line']:<7} {str(r['tier'] or '-'):<5} "
+            f"{(r['oem_make'] or '-'):<10} {(r['oem_model'] or '-'):<14} {r['status']:<11} "
+            f"{r['date_of_manufacture']:<11} {(r['date_of_sale'] or '-'):<11}"
+        )
+
+
+def cmd_handoff_card(args: argparse.Namespace) -> None:
+    conn = require_db()
+    unit = op_handoff_card(conn, args.serial)
+    print(f"=== Handoff card: {args.serial} ===")
+    print(f"{unit['oem_make'] or ''} {unit['oem_model'] or ''}".strip())
+    print(f"Build: {unit['build_id'] or '-'}")
+    print()
+    print(f"Login passphrase: {unit['temp_login_passphrase']}")
+    print(f"UEFI passphrase:  {unit['temp_uefi_passphrase']}")
+    print(f"LUKS passphrase:  {unit['temp_luks_passphrase']}")
+    print()
+    print("Change all three on first boot. Contact <you> for support.")
+
+
+def cmd_verify_serial(args: argparse.Namespace) -> None:
+    ok = verify_serial(args.serial)
+    print("valid" if ok else "INVALID — check digit does not match, re-check for typos")
+    sys.exit(0 if ok else 1)
+
+
+def cmd_menu(_args: argparse.Namespace) -> None:
+    run_tui()
+
+
+def cmd_script_oses(_args: argparse.Namespace) -> None:
+    for os_id, info in OS_TARGETS.items():
+        print(f"{os_id:<8} {info['name']} ({info['family']})")
+
+
+def cmd_script_apps(_args: argparse.Namespace) -> None:
+    for app_id, app in APPS.items():
+        print(f"{app_id:<18} {app['name']}")
+
+
+def _opts_from_args(args: argparse.Namespace) -> GenOptions:
+    apps = [a.strip() for a in (args.apps or "").split(",") if a.strip()]
+    unknown = [a for a in apps if a not in APPS]
+    if unknown:
+        raise FleetError(f"Unknown app id(s): {', '.join(unknown)}. See `fleetctl script apps`.")
+    return GenOptions(
+        os_id=args.os,
+        apps=apps,
+        luks_password_enabled=not args.tpm_unlock,
+        uefi_password_reminder=args.uefi_reminder,
+        force_user_password_change=not args.no_force_password_change,
+        auto_updates=not args.no_auto_updates,
+        firewall=not args.no_firewall,
+        zram_tlp=not args.no_zram_tlp,
+        printing_codecs=not args.no_printing_codecs,
+        grub_btrfs=not args.no_grub_btrfs,
+        snapper=not args.no_snapper,
+    )
+
+
+def cmd_script_generate(args: argparse.Namespace) -> None:
+    if args.os not in OS_TARGETS:
+        raise FleetError(f"Unknown OS '{args.os}'. See `fleetctl script oses`.")
+    opts = _opts_from_args(args)
+    script = generate_script(opts)
+
+    if args.register_build:
+        conn = require_db()
+        GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+        dest = GENERATED_DIR / f"{args.register_build}.sh"
+        dest.write_text(script)
+        dest.chmod(0o755)
+        rel_path, sha256 = op_register_build(
+            conn, args.register_build, args.line, args.tier, str(dest), args.desc
+        )
+        print(f"Wrote {dest.relative_to(GENERATED_DIR.parent.parent)}")
+        print(f"Registered build '{args.register_build}' -> {rel_path} (sha256 {sha256[:12]}...)")
+    elif args.output:
+        Path(args.output).write_text(script)
+        Path(args.output).chmod(0o755)
+        print(f"Wrote {args.output}")
+    else:
+        print(script)
+
+
+# --------------------------------------------------------------------------
+# TUI — curses-based menu. Reuses the op_ functions above; nothing here talks
+# to sqlite directly. Kept in this same file (stdlib curses, no new dep).
+# --------------------------------------------------------------------------
+
+def run_tui() -> None:
+    import curses
+    if not DB_PATH.exists():
+        init_db()
+    curses.wrapper(_tui_main)
+
+
+def _tui_main(stdscr) -> None:
+    import curses
+    curses.curs_set(0)
+    conn = get_conn()
+
+    main_menu = [
+        ("New unit", _tui_new_unit),
+        ("List units", _tui_list_units),
+        ("Show unit details", _tui_show_unit),
+        ("Update status", _tui_status),
+        ("Mark sold", _tui_sell),
+        ("Warranty claim", _tui_warranty),
+        ("Repurpose unit", _tui_repurpose),
+        ("Import hardware config", _tui_hardware_import),
+        ("Save completed checklist", _tui_checklist_save),
+        ("Print handoff card", _tui_handoff_card),
+        ("Purge temp secrets", _tui_purge_secrets),
+        ("Manage builds", _tui_builds_menu),
+        ("Quit", None),
+    ]
+
+    while True:
+        choice = _select_list(stdscr, "fleetctl", main_menu, formatter=lambda x: x[0])
+        if choice is None or choice[1] is None:
+            break
+        try:
+            choice[1](stdscr, conn)
+        except FleetError as e:
+            _message_screen(stdscr, f"Error: {e}")
+        except Exception as e:  # keep the menu alive even on an unexpected bug
+            _message_screen(stdscr, f"Unexpected error: {e}")
+
+
+# --- generic curses widgets ---
+
+def _select_list(stdscr, title, items, formatter=str, extra_help=""):
+    import curses
+    if not items:
+        _message_screen(stdscr, f"{title}\n\n(nothing to show)")
+        return None
+    idx = top = 0
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        stdscr.addnstr(0, 0, title, max(w - 1, 0), curses.A_BOLD)
+        help_line = "up/down move   enter select   q back" + (f"   {extra_help}" if extra_help else "")
+        stdscr.addnstr(1, 0, help_line, max(w - 1, 0), curses.A_DIM)
+        visible_rows = max(h - 3, 1)
+        if idx < top:
+            top = idx
+        if idx >= top + visible_rows:
+            top = idx - visible_rows + 1
+        for row, i in enumerate(range(top, min(len(items), top + visible_rows))):
+            text = formatter(items[i])
+            attr = curses.A_REVERSE if i == idx else curses.A_NORMAL
+            stdscr.addnstr(3 + row, 0, text, max(w - 1, 0), attr)
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (curses.KEY_UP, ord('k')):
+            idx = (idx - 1) % len(items)
+        elif key in (curses.KEY_DOWN, ord('j')):
+            idx = (idx + 1) % len(items)
+        elif key in (10, 13, curses.KEY_ENTER, ord(' ')):
+            return items[idx]
+        elif key in (27, ord('q'), curses.KEY_LEFT):
+            return None
+
+
+def _text_viewer(stdscr, title, lines):
+    import curses
+    offset = 0
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        stdscr.addnstr(0, 0, title, max(w - 1, 0), curses.A_BOLD)
+        stdscr.addnstr(1, 0, "up/down scroll   q back", max(w - 1, 0), curses.A_DIM)
+        visible_rows = max(h - 3, 1)
+        offset = max(0, min(offset, max(len(lines) - visible_rows, 0)))
+        for row, line in enumerate(lines[offset:offset + visible_rows]):
+            stdscr.addnstr(3 + row, 0, line, max(w - 1, 0))
+        stdscr.refresh()
+        key = stdscr.getch()
+        if key in (curses.KEY_UP, ord('k')):
+            offset = max(0, offset - 1)
+        elif key in (curses.KEY_DOWN, ord('j')):
+            offset += 1
+        elif key in (curses.KEY_NPAGE,):
+            offset += visible_rows
+        elif key in (curses.KEY_PPAGE,):
+            offset = max(0, offset - visible_rows)
+        elif key in (27, ord('q'), 10, 13):
+            return
+
+
+def _message_screen(stdscr, text):
+    stdscr.erase()
+    h, w = stdscr.getmaxyx()
+    lines = text.splitlines() or [""]
+    for i, line in enumerate(lines[: max(h - 2, 1)]):
+        stdscr.addnstr(i, 0, line, max(w - 1, 0))
+    stdscr.addnstr(max(h - 1, 0), 0, "-- press any key to continue --", max(w - 1, 0))
+    stdscr.refresh()
+    stdscr.getch()
+
+
+def _text_prompt(stdscr, prompt, default=None):
+    import curses
+    curses.endwin()
+    try:
+        suffix = f" [{default}]" if default not in (None, "") else ""
+        raw = input(f"{prompt}{suffix}: ").strip()
+    finally:
+        stdscr.touchwin()
+        stdscr.refresh()
+        curses.curs_set(0)
+    return raw if raw else (default or "")
+
+
+def _confirm(stdscr, question) -> bool:
+    choice = _select_list(stdscr, question, ["Yes", "No"])
+    return choice == "Yes"
+
+
+TIER_CHOICES = ["(none)", "1", "2", "3"]
+
+
+def _pick_tier(stdscr, title="Tier"):
+    choice = _select_list(stdscr, title, TIER_CHOICES)
+    if choice in (None, "(none)"):
+        return None
+    return int(choice)
+
+
+def _pick_build(stdscr, conn, line=None, title="Build (optional)"):
+    builds = op_list_builds(conn)
+    if line:
+        builds = [b for b in builds if b["product_line"] == line]
+    options = ["(none)"] + list(builds)
+    choice = _select_list(stdscr, title, options,
+                           formatter=lambda b: "(none)" if b == "(none)" else b["build_id"])
+    if choice in (None, "(none)"):
+        return None
+    return choice["build_id"]
+
+
+def _pick_unit(stdscr, conn, title="Select unit"):
+    rows = op_list_units(conn)
+    if not rows:
+        _message_screen(stdscr, "No units yet. Create one with 'New unit' first.")
+        return None
+
+    def fmt(r):
+        tier = f"t{r['tier']}" if r["tier"] else ""
+        return (f"{r['serial']:<20} {r['product_line']}{tier:<3} "
+                f"{(r['oem_make'] or '-'):<10} {(r['oem_model'] or '-'):<16} {r['status']}")
+
+    row = _select_list(stdscr, title, rows, formatter=fmt)
+    return row["serial"] if row else None
+
+
+# --- menu actions ---
+
+def _tui_new_unit(stdscr, conn):
+    line_choice = _select_list(stdscr, "Product line", ["laptop", "pixel"])
+    if line_choice is None:
+        return
+    tier = _pick_tier(stdscr, "Tier")
+    make = _text_prompt(stdscr, "OEM make (e.g. Lenovo, blank to skip)")
+    model = _text_prompt(stdscr, "OEM model (e.g. ThinkPad T480, blank to skip)")
+    build = _pick_build(stdscr, conn, line=line_choice)
+    mfg_date = _text_prompt(stdscr, "Manufacture date YYYY-MM-DD (blank = today)")
+    words_str = _text_prompt(stdscr, "Words per passphrase", default="6")
+    words = int(words_str) if words_str else 6
+
+    result = op_create_unit(conn, line_choice, tier, make or None, model or None,
+                             build, mfg_date or None, words)
+    lines = [
+        f"Created unit {result['serial']}",
+        f"line/tier:  {result['line']} / tier {result['tier'] or '-'}",
+        f"make/model: {result['make'] or '-'} {result['model'] or '-'}",
+        f"build:      {result['build'] or '-'}",
+        f"mfg date:   {result['mfg_date']}",
+        "",
+        "--- handoff card (temporary — buyer must change all three) ---",
+        f"login passphrase: {result['login_passphrase']}",
+        f"UEFI passphrase:  {result['uefi_passphrase']}",
+        f"LUKS passphrase:  {result['luks_passphrase']}",
+    ]
+    _message_screen(stdscr, "\n".join(lines))
+
+
+def _tui_list_units(stdscr, conn):
+    status = _select_list(stdscr, "Filter by status", ["(all)"] + STATUS_FLOW)
+    if status is None:
+        return
+    line = _select_list(stdscr, "Filter by line", ["(all)", "laptop", "pixel"])
+    if line is None:
+        return
+    rows = op_list_units(conn, None if status == "(all)" else status,
+                          None if line == "(all)" else line)
+    if not rows:
+        _message_screen(stdscr, "No units found.")
+        return
+    header = f"{'SERIAL':<20} {'LINE':<7} {'TIER':<5} {'MAKE':<10} {'MODEL':<14} {'STATUS':<11} {'MFG':<11} {'SOLD':<11}"
+    lines = [header, "-" * len(header)]
+    for r in rows:
+        lines.append(
+            f"{r['serial']:<20} {r['product_line']:<7} {str(r['tier'] or '-'):<5} "
+            f"{(r['oem_make'] or '-'):<10} {(r['oem_model'] or '-'):<14} {r['status']:<11} "
+            f"{r['date_of_manufacture']:<11} {(r['date_of_sale'] or '-'):<11}"
+        )
+    _text_viewer(stdscr, "Units", lines)
+
+
+def _tui_show_unit(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    unit = op_get_unit(conn, serial)
+    d = dict(unit)
+    hw = d.pop("hardware_config_json", None)
+    lines = json.dumps(d, indent=2).splitlines()
+    if hw:
+        lines += ["--- hardware_config ---"] + json.dumps(json.loads(hw), indent=2).splitlines()
+    _text_viewer(stdscr, f"Unit {serial}", lines)
+
+
+def _tui_status(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    new_status = _select_list(stdscr, "New status", STATUS_FLOW)
+    if not new_status:
+        return
+    op_set_status(conn, serial, new_status)
+    _message_screen(stdscr, f"{serial} -> {new_status}")
+
+
+def _tui_sell(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    sale_date = _text_prompt(stdscr, "Sale date YYYY-MM-DD (blank = today)")
+    price = _text_prompt(stdscr, "Sale price (blank to skip)")
+    result_date = op_sell(conn, serial, sale_date or None, price or None)
+    _message_screen(stdscr, f"{serial} marked Sold on {result_date}" + (f" for {price}" if price else ""))
+
+
+def _tui_warranty(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    note = ""
+    while not note:
+        note = _text_prompt(stdscr, "Warranty note (required)")
+    op_warranty(conn, serial, note)
+    _message_screen(stdscr, f"{serial} flagged Warrantied: {note}")
+
+
+def _tui_repurpose(stdscr, conn):
+    serial = _pick_unit(stdscr, conn, title="Select unit to repurpose")
+    if not serial:
+        return
+    if not _confirm(stdscr, f"Repurpose {serial}? This retires it and creates a new linked unit."):
+        return
+    new_line = _select_list(stdscr, "New product line", ["laptop", "pixel"])
+    if new_line is None:
+        return
+    new_tier = _pick_tier(stdscr, "New tier")
+    build = _pick_build(stdscr, conn, line=new_line)
+    words_str = _text_prompt(stdscr, "Words per passphrase", default="6")
+    words = int(words_str) if words_str else 6
+    result = op_repurpose(conn, serial, new_line, new_tier, build, words)
+    lines = [
+        f"{serial} -> Repurposed.",
+        f"New unit {result['serial']} created (linked via repurposed_from).",
+        "",
+        "--- handoff card (temporary — buyer must change all three) ---",
+        f"login passphrase: {result['login_passphrase']}",
+        f"UEFI passphrase:  {result['uefi_passphrase']}",
+        f"LUKS passphrase:  {result['luks_passphrase']}",
+    ]
+    _message_screen(stdscr, "\n".join(lines))
+
+
+def _tui_hardware_import(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    json_file = _text_prompt(stdscr, "Path to hardware-inventory.sh JSON output")
+    if not json_file:
+        return
+    backfilled = op_import_hardware(conn, serial, json_file)
+    _message_screen(stdscr, f"Imported hardware config for {serial}"
+                    + (" (backfilled make/model from dmidecode)" if backfilled else ""))
+
+
+def _tui_checklist_save(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    path = _text_prompt(stdscr, "Path to completed checklist file")
+    if not path:
+        return
+    dest = op_save_checklist(conn, serial, path)
+    _message_screen(stdscr, f"Saved completed checklist -> {dest}")
+
+
+def _tui_handoff_card(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    unit = op_handoff_card(conn, serial)
+    lines = [
+        f"=== Handoff card: {serial} ===",
+        f"{unit['oem_make'] or ''} {unit['oem_model'] or ''}".strip(),
+        f"Build: {unit['build_id'] or '-'}",
+        "",
+        f"Login passphrase: {unit['temp_login_passphrase']}",
+        f"UEFI passphrase:  {unit['temp_uefi_passphrase']}",
+        f"LUKS passphrase:  {unit['temp_luks_passphrase']}",
+        "",
+        "Change all three on first boot.",
+    ]
+    _message_screen(stdscr, "\n".join(lines))
+
+
+def _tui_purge_secrets(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    if not _confirm(stdscr, f"Purge stored temp passphrases for {serial}? Only do this after the buyer changed them."):
+        return
+    op_purge_secrets(conn, serial)
+    _message_screen(stdscr, f"Purged stored temp passphrases for {serial}")
+
+
+def _tui_builds_menu(stdscr, conn):
+    submenu = [
+        ("List builds", _tui_build_list),
+        ("Register a build", _tui_build_register),
+        ("Verify a build's script hasn't changed", _tui_build_verify),
+        ("Back", None),
+    ]
+    while True:
+        choice = _select_list(stdscr, "Manage builds", submenu, formatter=lambda x: x[0])
+        if choice is None or choice[1] is None:
+            return
+        choice[1](stdscr, conn)
+
+
+def _tui_build_list(stdscr, conn):
+    rows = op_list_builds(conn)
+    if not rows:
+        _message_screen(stdscr, "No builds registered yet.")
+        return
+    lines = []
+    for r in rows:
+        tier = f" tier {r['tier']}" if r["tier"] else ""
+        lines.append(f"{r['build_id']}  [{r['product_line']}{tier}]")
+        lines.append(f"    script: {r['postinstall_script_path']}  (sha256 {r['script_sha256'][:12]}...)")
+        if r["description"]:
+            lines.append(f"    {r['description']}")
+    _text_viewer(stdscr, "Builds", lines)
+
+
+def _tui_build_register(stdscr, conn):
+    line = _select_list(stdscr, "Product line", ["laptop", "pixel"])
+    if line is None:
+        return
+    tier = _pick_tier(stdscr, "Tier")
+    build_id = ""
+    while not build_id:
+        build_id = _text_prompt(stdscr, "Build id (e.g. laptop-tier1-mint-v1)")
+    script = ""
+    while not script:
+        script = _text_prompt(stdscr, "Path to post-install script/doc")
+    desc = _text_prompt(stdscr, "Description (optional)")
+    rel_path, sha256 = op_register_build(conn, build_id, line, tier, script, desc or None)
+    _message_screen(stdscr, f"Registered build '{build_id}' -> {rel_path}\nsha256 {sha256}")
+
+
+def _tui_build_verify(stdscr, conn):
+    builds = op_list_builds(conn)
+    if not builds:
+        _message_screen(stdscr, "No builds registered yet.")
+        return
+    build = _select_list(stdscr, "Verify which build?", builds, formatter=lambda b: b["build_id"])
+    if not build:
+        return
+    ok, registered, current = op_verify_build(conn, build["build_id"])
+    if ok:
+        _message_screen(stdscr, f"OK: {build['build_id']} script unchanged since registration.")
+    else:
+        _message_screen(
+            stdscr,
+            f"MISMATCH: {build['build_id']} script has changed since registration!\n"
+            f"registered sha256: {registered}\ncurrent sha256:    {current}",
+        )
+
+
+# --------------------------------------------------------------------------
+# CLI wiring
+# --------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="fleetctl", description=__doc__)
+    sub = p.add_subparsers(dest="command")
+
+    sub.add_parser("init", help="Create the database").set_defaults(func=cmd_init)
+    sub.add_parser("gen-key", help="Generate a new database encryption key").set_defaults(func=cmd_gen_key)
+    sub.add_parser("menu", help="Interactive arrow-key menu (also runs if no subcommand given)").set_defaults(func=cmd_menu)
+
+    b = sub.add_parser("build", help="Register/inspect post-install builds")
+    bsub = b.add_subparsers(dest="build_command", required=True)
+
+    br = bsub.add_parser("register", help="Register a build id -> post-install script")
+    br.add_argument("--id", required=True, help="build id, e.g. laptop-tier1-mint-v3")
+    br.add_argument("--line", required=True, choices=LINE_PREFIXES.keys())
+    br.add_argument("--tier", type=int, default=None)
+    br.add_argument("--script", required=True, help="path to the post-install script")
+    br.add_argument("--desc", default=None)
+    br.set_defaults(func=cmd_build_register)
+
+    bl = bsub.add_parser("list", help="List registered builds")
+    bl.set_defaults(func=cmd_build_list)
+
+    bv = bsub.add_parser("verify", help="Check a build's script hasn't changed since registration")
+    bv.add_argument("id")
+    bv.set_defaults(func=cmd_build_verify)
+
+    n = sub.add_parser("new", help="Create a new unit (generates serial + temp passphrases)")
+    n.add_argument("--line", required=True, choices=LINE_PREFIXES.keys())
+    n.add_argument("--tier", type=int, default=None)
+    n.add_argument("--make", default=None, help="OEM make, e.g. Lenovo")
+    n.add_argument("--model", default=None, help="OEM model, e.g. ThinkPad T480")
+    n.add_argument("--build", default=None, help="build id (see `fleetctl build list`)")
+    n.add_argument("--mfg-date", default=None, help="YYYY-MM-DD, defaults to today")
+    n.add_argument("--words", type=int, default=6, help="words per passphrase (default 6)")
+    n.set_defaults(func=cmd_new)
+
+    hi = sub.add_parser("hardware-import", help="Attach a hardware-inventory.sh JSON dump to a unit")
+    hi.add_argument("serial")
+    hi.add_argument("json_file")
+    hi.set_defaults(func=cmd_hardware_import)
+
+    cs = sub.add_parser("checklist-save", help="Copy a completed checklist into checklists/")
+    cs.add_argument("serial")
+    cs.add_argument("path")
+    cs.set_defaults(func=cmd_checklist_save)
+
+    st = sub.add_parser("status", help="Update a unit's pipeline status")
+    st.add_argument("serial")
+    st.add_argument("new_status", choices=STATUS_FLOW)
+    st.set_defaults(func=cmd_status)
+
+    sl = sub.add_parser("sell", help="Record date of sale (and price)")
+    sl.add_argument("serial")
+    sl.add_argument("--date", default=None, help="YYYY-MM-DD, defaults to today")
+    sl.add_argument("--price", default=None)
+    sl.set_defaults(func=cmd_sell)
+
+    w = sub.add_parser("warranty", help="Flag a unit as warrantied and log a note")
+    w.add_argument("serial")
+    w.add_argument("--note", required=True)
+    w.set_defaults(func=cmd_warranty)
+
+    rp = sub.add_parser("repurpose", help="Retire a unit and spin up a new linked unit")
+    rp.add_argument("serial")
+    rp.add_argument("--new-line", choices=LINE_PREFIXES.keys(), default=None)
+    rp.add_argument("--new-tier", type=int, default=None)
+    rp.add_argument("--build", default=None)
+    rp.add_argument("--words", type=int, default=6)
+    rp.set_defaults(func=cmd_repurpose)
+
+    ps = sub.add_parser("purge-secrets", help="Wipe stored temp passphrases once buyer has changed them")
+    ps.add_argument("serial")
+    ps.set_defaults(func=cmd_purge_secrets)
+
+    sh = sub.add_parser("show", help="Print a unit's full record")
+    sh.add_argument("serial")
+    sh.set_defaults(func=cmd_show)
+
+    ls = sub.add_parser("list", help="List units")
+    ls.add_argument("--status", choices=STATUS_FLOW, default=None)
+    ls.add_argument("--line", choices=LINE_PREFIXES.keys(), default=None)
+    ls.set_defaults(func=cmd_list)
+
+    hc = sub.add_parser("handoff-card", help="Print the printable handoff card for a unit")
+    hc.add_argument("serial")
+    hc.set_defaults(func=cmd_handoff_card)
+
+    vs = sub.add_parser("verify-serial", help="Check a serial's check digit (catches typos)")
+    vs.add_argument("serial")
+    vs.set_defaults(func=cmd_verify_serial)
+
+    sc = sub.add_parser("script", help="Generate a post-install script")
+    scsub = sc.add_subparsers(dest="script_command", required=True)
+
+    scsub.add_parser("oses", help="List OS targets the generator supports").set_defaults(func=cmd_script_oses)
+    scsub.add_parser("apps", help="List the app catalog").set_defaults(func=cmd_script_apps)
+
+    sg = scsub.add_parser("generate", help="Generate a post-install script")
+    sg.add_argument("--os", required=True, choices=OS_TARGETS.keys())
+    sg.add_argument("--apps", default="", help="comma-separated app ids, see `fleetctl script apps`")
+    sg.add_argument("--tpm-unlock", action="store_true",
+                     help="enroll TPM2 auto-unlock instead of a LUKS passphrase-change wizard")
+    sg.add_argument("--uefi-reminder", action="store_true",
+                     help="include a manual UEFI/BIOS password reminder (can't be automated cross-vendor)")
+    sg.add_argument("--no-force-password-change", action="store_true",
+                     help="don't force the Unix account password to be changed at next login")
+    sg.add_argument("--no-auto-updates", action="store_true")
+    sg.add_argument("--no-firewall", action="store_true")
+    sg.add_argument("--no-zram-tlp", action="store_true")
+    sg.add_argument("--no-printing-codecs", action="store_true")
+    sg.add_argument("--no-grub-btrfs", action="store_true")
+    sg.add_argument("--no-snapper", action="store_true")
+    sg.add_argument("-o", "--output", default=None, help="write to this path instead of stdout")
+    sg.add_argument("--register-build", default=None, metavar="BUILD_ID",
+                     help="save under postinstall/generated/<id>.sh and register it as a build")
+    sg.add_argument("--line", choices=LINE_PREFIXES.keys(), default="laptop",
+                     help="product line, only used with --register-build (default: laptop)")
+    sg.add_argument("--tier", type=int, default=None, help="only used with --register-build")
+    sg.add_argument("--desc", default=None, help="only used with --register-build")
+    sg.set_defaults(func=cmd_script_generate)
+
+    return p
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.command is None:
+        run_tui()
+        return
+    try:
+        args.func(args)
+    except FleetError as e:
+        sys.exit(str(e))
+
+
+if __name__ == "__main__":
+    main()

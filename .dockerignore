@@ -1,0 +1,6 @@
+data/
+checklists/
+postinstall/generated/
+__pycache__/
+*.pyc
+.git/

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fleetctl — Obsidian Devices</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='brand/icon-app.svg') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/icon-app.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand/icon-app.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{ url_for('units_list') }}" class="brand" aria-label="Obsidian Devices — fleetctl home">
+      <img src="{{ url_for('static', filename='brand/logo-primary-dark.svg') }}" alt="Obsidian Devices" class="brand-logo">
+    </a>
+    <nav>
+      <a href="{{ url_for('units_list') }}">Units</a>
+      <a href="{{ url_for('unit_new') }}">+ New unit</a>
+      <a href="{{ url_for('builds_list') }}">Builds</a>
+      <a href="{{ url_for('script_generate') }}">Generate script</a>
+      <a href="{{ url_for('qr_lookup') }}">QR lookup</a>
+    </nav>
+  </header>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes">
+        {% for category, message in messages %}
+          <li class="flash-{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

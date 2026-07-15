@@ -1,0 +1,19 @@
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect width="680" height="200" rx="16" fill="#14171A"/>
+  <g transform="translate(100,100)">
+    <polygon points="0,-72 62,-36 62,36 0,72 -62,36 -62,-36" fill="#1B2025" stroke="#2EE59D" stroke-width="4" stroke-linejoin="round" stroke-opacity="0.35"/>
+    <polygon points="0,-58 50,-29 50,29 0,58 -50,29 -50,-29" fill="none" stroke="#2C333B" stroke-width="2" stroke-linejoin="round"/>
+    <polygon points="-52,-10 -36,-30 -4,0 -36,30 -50,14" fill="#23282E"/>
+    <polygon points="-36,-30 -4,0 -44,2" fill="#2C333B"/>
+    <polygon points="-44,2 -4,0 -36,30" fill="#1B2025"/>
+    <polygon points="-52,-10 -36,-30 -44,2" fill="#23282E"/>
+    <polygon points="-52,-10 -44,2 -50,14" fill="#181C20"/>
+    <line x1="-44" y1="2" x2="-4" y2="0" stroke="#3A424B" stroke-width="1.5"/>
+    <polyline points="-36,-30 -4,0 -36,30" fill="none" stroke="#2EE59D" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="14" y="-22" width="24" height="44" rx="3" fill="#2EE59D">
+      <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.2s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  <text x="196" y="106" fill="#F2F4F5" font-size="46" font-weight="700" letter-spacing="2">OBSIDIAN</text>
+  <text x="198" y="146" fill="#2EE59D" font-size="24" font-weight="500" letter-spacing="11" font-family="Menlo, Consolas, monospace">DEVICES</text>
+</svg>

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Created unit {{ result.serial }}</h1>
+{% if repurposed_from %}<p>Repurposed from {{ repurposed_from }}.</p>{% endif %}
+<table class="kv">
+  <tr><th>Line/tier</th><td>{{ result.line }} / tier {{ result.tier or '-' }}</td></tr>
+  <tr><th>Make/model</th><td>{{ result.make or '-' }} {{ result.model or '-' }}</td></tr>
+  <tr><th>Build</th><td>{{ result.build or '-' }}</td></tr>
+  <tr><th>Mfg date</th><td>{{ result.mfg_date }}</td></tr>
+</table>
+<h2>Handoff card (temporary — buyer must change all three)</h2>
+<pre class="secret">Login passphrase: {{ result.login_passphrase }}
+UEFI passphrase:  {{ result.uefi_passphrase }}
+LUKS passphrase:  {{ result.luks_passphrase }}</pre>
+
+<h2>QR label</h2>
+<img src="{{ url_for('unit_qr', serial=result.serial) }}" alt="QR code" width="160" height="160" class="qr-preview">
+<p><a href="{{ url_for('unit_qr', serial=result.serial, download=1) }}">Download PNG</a></p>
+
+<p><a href="{{ url_for('unit_detail', serial=result.serial) }}">Go to unit</a></p>
+{% endblock %}

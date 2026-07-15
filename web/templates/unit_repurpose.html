@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Repurpose {{ unit['serial'] }}</h1>
+<p>This retires {{ unit['serial'] }} (status &rarr; Repurposed) and creates a new linked unit.</p>
+<form method="post">
+  <label>New product line
+    <select name="new_line">
+      <option value="">(same: {{ unit['product_line'] }})</option>
+      <option value="laptop">laptop</option>
+      <option value="pixel">pixel</option>
+    </select>
+  </label>
+  <label>New tier
+    <select name="new_tier">
+      <option value="">(same: {{ unit['tier'] or 'none' }})</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+    </select>
+  </label>
+  <label>Build
+    <select name="build">
+      <option value="">(none)</option>
+      {% for b in builds %}<option value="{{ b['build_id'] }}">{{ b['build_id'] }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Words per passphrase <input type="number" name="words" value="6" min="3" max="10"></label>
+  <button type="submit">Repurpose</button>
+</form>
+{% endblock %}

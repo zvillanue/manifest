@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Units</h1>
+<form method="get" class="filters">
+  <select name="status">
+    <option value="">(all statuses)</option>
+    {% for s in statuses %}
+    <option value="{{ s }}" {% if s == cur_status %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="line">
+    <option value="">(all lines)</option>
+    {% for l in lines %}
+    <option value="{{ l }}" {% if l == cur_line %}selected{% endif %}>{{ l }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Serial</th><th>Line</th><th>Tier</th><th>Make</th><th>Model</th><th>Status</th><th>Mfg date</th><th>Sold</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{{ url_for('unit_detail', serial=r['serial']) }}">{{ r['serial'] }}</a></td>
+      <td>{{ r['product_line'] }}</td>
+      <td>{{ r['tier'] or '-' }}</td>
+      <td>{{ r['oem_make'] or '-' }}</td>
+      <td>{{ r['oem_model'] or '-' }}</td>
+      <td>{{ r['status'] }}</td>
+      <td>{{ r['date_of_manufacture'] }}</td>
+      <td>{{ r['date_of_sale'] or '-' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8">No units found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>New unit</h1>
+<form method="post">
+  <label>Product line
+    <select name="line" required>
+      <option value="laptop">laptop</option>
+      <option value="pixel">pixel</option>
+    </select>
+  </label>
+  <label>Tier
+    <select name="tier">
+      <option value="">(none)</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+    </select>
+  </label>
+  <label>OEM make <input type="text" name="make" placeholder="Lenovo"></label>
+  <label>OEM model <input type="text" name="model" placeholder="ThinkPad T480"></label>
+  <label>Build
+    <select name="build">
+      <option value="">(none)</option>
+      {% for b in builds %}
+      <option value="{{ b['build_id'] }}">{{ b['build_id'] }} [{{ b['product_line'] }}{% if b['tier'] %} tier {{ b['tier'] }}{% endif %}]</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Manufacture date <input type="date" name="mfg_date" value="{{ today }}"></label>
+  <label>Words per passphrase <input type="number" name="words" value="6" min="3" max="10"></label>
+  <button type="submit">Create unit</button>
+</form>
+{% endblock %}

@@ -1,0 +1,15 @@
+# Runtime data — never commit real inventory/business data, especially to a public repo
+data/
+checklists/
+postinstall/generated/
+
+# Local secrets — the encryption key must never end up in git (see README's
+# "Encryption at rest" section: it's not supposed to live in this vault either)
+*.key
+.env
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

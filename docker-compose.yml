@@ -1,0 +1,41 @@
+services:
+  fleetctl-web:
+    build: .
+    # Run as your own user, not root. The container writes into this
+    # directory via the bind mount below (data/fleetctl.db, checklists/,
+    # postinstall/generated/) — without this, those files end up owned by
+    # root on the host and the host-side ./fleetctl CLI can read them but
+    # can't write to them anymore (confirmed: sqlite3.OperationalError:
+    # attempt to write a readonly database). Set UID/GID before running:
+    #   UID=$(id -u) GID=$(id -g) docker compose up --build
+    # bash exports $UID automatically; GID has no shell built-in, hence the
+    # explicit export. Defaults to 1000:1000 (the common first-user id on
+    # most Linux distros) if you don't set them.
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      # Bound to localhost only by default — this UI can display temporary
+      # device passphrases in plaintext and has no auth unless you set the
+      # FLEETCTL_WEB_USER/PASSWORD vars below. If you want it reachable from
+      # elsewhere on your LAN (e.g. a bench laptop), change this to
+      # "4299:4299" — but set those two env vars first.
+      - "127.0.0.1:4299:4299"
+    volumes:
+      # Bind-mount the whole directory (not a named volume) so data/, checklists/,
+      # postinstall/, and wordlist/ stay the exact same files the host CLI/TUI
+      # use — the web UI and `./fleetctl` on the host share one database.
+      - .:/app
+    environment:
+      # Uncomment both to require HTTP Basic Auth. Recommended even on
+      # localhost if this machine has other users.
+      # - FLEETCTL_WEB_USER=admin
+      # - FLEETCTL_WEB_PASSWORD=change-me
+      - FLEETCTL_WEB_PORT=4299
+      # Required — the DB is encrypted at rest (see fleetlib.py). Generate
+      # one with `fleetctl gen-key`, save it in a password manager (NOT in
+      # this repo/vault), and export it in the shell that runs `docker
+      # compose up`, e.g.:
+      #   FLEETCTL_DB_KEY=$(pass show fleetctl/db-key) docker compose up --build
+      # Do not hardcode the actual key value in this file — it's version
+      # controlled and this file is meant to be safe to commit.
+      - FLEETCTL_DB_KEY=${FLEETCTL_DB_KEY:?set FLEETCTL_DB_KEY before running compose}
+    restart: unless-stopped

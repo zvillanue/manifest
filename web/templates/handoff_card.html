@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Handoff card: {{ unit['serial'] }}</h1>
+<p>{{ unit['oem_make'] or '' }} {{ unit['oem_model'] or '' }}</p>
+<p>Build: {{ unit['build_id'] or '-' }}</p>
+<pre class="secret">Login passphrase: {{ unit['temp_login_passphrase'] }}
+UEFI passphrase:  {{ unit['temp_uefi_passphrase'] }}
+LUKS passphrase:  {{ unit['temp_luks_passphrase'] }}</pre>
+<p>Change all three on first boot.</p>
+<p><a href="{{ url_for('unit_detail', serial=unit['serial']) }}">Back to unit</a></p>
+{% endblock %}

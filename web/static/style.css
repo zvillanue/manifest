@@ -1,0 +1,132 @@
+/* Obsidian Devices brand palette — see ../../../05 Brand/Brand Style Guide.md */
+:root {
+  --obsidian-black: #14171A;
+  --charcoal: #1B2025;
+  --graphite: #23282E;
+  --graphite-2: #2C333B;
+  --steel: #3A424B;
+  --terminal-green: #2EE59D;
+  --off-white: #F2F4F5;
+
+  /* semantic aliases used throughout this file */
+  --bg: var(--obsidian-black);
+  --panel: var(--charcoal);
+  --input-bg: var(--graphite);
+  --border: var(--graphite-2);
+  --divider: var(--steel);
+  --accent: var(--terminal-green);
+  --fg: var(--off-white);
+  --muted: #8b96a1;
+  --error: #f2705e;
+  --ok: var(--terminal-green);
+
+  --font-sans: "Inter", "Space Grotesk", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  margin: 0;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  padding: 0.75rem 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: block; line-height: 0; }
+.brand-logo { height: 40px; width: auto; display: block; }
+
+nav { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+nav a {
+  color: var(--fg);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0.4rem 0.2rem;
+}
+nav a:hover { color: var(--accent); }
+
+main { padding: 1.5rem 2rem 4rem; max-width: 900px; margin: 0 auto; }
+h1, h2 { font-weight: 700; }
+h1 { letter-spacing: 0.2px; }
+code, pre, .mono { font-family: var(--font-mono); }
+
+.table-wrap { overflow-x: auto; margin-bottom: 1.5rem; }
+table { border-collapse: collapse; width: 100%; }
+.table-wrap table { min-width: 620px; }
+table.kv { table-layout: fixed; margin-bottom: 1.5rem; }
+td, th { word-break: break-word; }
+th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+table.kv th { width: 160px; color: var(--muted); vertical-align: top; }
+a { color: var(--accent); }
+form { margin-bottom: 1rem; }
+form label { display: block; margin-bottom: 0.6rem; }
+input, select, button {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  background: var(--input-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 0.25rem;
+  min-height: 2.6rem;
+}
+input:focus, select:focus, button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--obsidian-black);
+  border: none;
+  font-weight: 700;
+  padding: 0.6rem 1.1rem;
+}
+button:hover { opacity: 0.88; }
+.actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.actions-grid form { background: var(--panel); padding: 0.9rem; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 0; }
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre.secret { border-color: var(--error); }
+.flashes { list-style: none; padding: 0; }
+.flashes li { padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
+.flash-ok { background: rgba(46, 229, 157, 0.12); color: var(--ok); border: 1px solid var(--ok); }
+.flash-error { background: rgba(242, 112, 94, 0.14); color: var(--error); border: 1px solid var(--error); }
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; align-items: center; }
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+}
+legend { padding: 0 0.4rem; color: var(--muted); font-weight: 600; }
+.checkbox-row { display: flex; align-items: center; gap: 0.6rem; }
+.checkbox-row input { margin-top: 0; min-height: auto; width: 1.15rem; height: 1.15rem; }
+.hint { color: var(--muted); font-size: 0.85rem; margin: -0.4rem 0 0.8rem 1.8rem; }
+.qr-preview { background: #fff; padding: 8px; border-radius: 6px; display: block; }
+
+@media (max-width: 640px) {
+  .site-header { padding: 0.6rem 1rem; }
+  .brand-logo { height: 32px; }
+  main { padding: 1rem 1rem 3rem; }
+  nav { gap: 0.4rem 1rem; }
+  nav a { padding: 0.5rem 0.3rem; font-size: 0.95rem; }
+  table.kv th { width: 40%; }
+  .actions-grid { grid-template-columns: 1fr; }
+  button { width: 100%; }
+}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ unit['serial'] }}</h1>
+<table class="kv">
+  <tr><th>Line/tier</th><td>{{ unit['product_line'] }} / {{ unit['tier'] or '-' }}</td></tr>
+  <tr><th>Make/model</th><td>{{ unit['oem_make'] or '-' }} {{ unit['oem_model'] or '-' }}</td></tr>
+  <tr><th>Build</th><td>{{ unit['build_id'] or '-' }}</td></tr>
+  <tr><th>Status</th><td>{{ unit['status'] }}</td></tr>
+  <tr><th>Mfg date</th><td>{{ unit['date_of_manufacture'] }}</td></tr>
+  <tr><th>Sale date</th><td>{{ unit['date_of_sale'] or '-' }}{% if unit['sale_price'] %} ({{ unit['sale_price'] }}){% endif %}</td></tr>
+  <tr><th>Warrantied</th><td>{{ 'yes' if unit['warrantied'] else 'no' }}</td></tr>
+  <tr><th>Repurposed</th><td>{{ 'yes' if unit['repurposed'] else 'no' }}{% if unit['repurposed_from'] %} (from {{ unit['repurposed_from'] }}){% endif %}</td></tr>
+  <tr><th>Checklist</th><td>{% if unit['checklist_path'] %}{{ unit['checklist_path'] }} ({{ unit['checklist_completed_at'] }}){% else %}none saved{% endif %}</td></tr>
+  <tr><th>Temp secrets</th><td>{% if unit['secrets_purged_at'] %}purged {{ unit['secrets_purged_at'] }}{% else %}<a href="{{ url_for('unit_handoff_card', serial=unit['serial']) }}">view handoff card</a>{% endif %}</td></tr>
+</table>
+
+{% if unit['warranty_notes'] %}
+<h2>Warranty notes</h2>
+<pre>{{ unit['warranty_notes'] }}</pre>
+{% endif %}
+
+{% if hw %}
+<h2>Hardware config</h2>
+<pre>{{ hw }}</pre>
+{% endif %}
+
+<h2>QR label</h2>
+<p>Encodes a random token meaningless to anyone without access to this
+database — not the serial, not hardware info. Look it up under "QR lookup".</p>
+<img src="{{ url_for('unit_qr', serial=unit['serial']) }}" alt="QR code" width="160" height="160" class="qr-preview">
+<p><a href="{{ url_for('unit_qr', serial=unit['serial'], download=1) }}">Download PNG</a></p>
+
+<h2>Actions</h2>
+<div class="actions-grid">
+  <form method="post" action="{{ url_for('unit_status', serial=unit['serial']) }}">
+    <label>Set status
+      <select name="new_status">
+        {% for s in statuses %}<option value="{{ s }}" {% if s == unit['status'] %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Update status</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_sell', serial=unit['serial']) }}">
+    <label>Sale date <input type="date" name="date"></label>
+    <label>Price <input type="text" name="price" placeholder="280"></label>
+    <button type="submit">Mark sold</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_warranty', serial=unit['serial']) }}">
+    <label>Warranty note <input type="text" name="note" required></label>
+    <button type="submit">File warranty claim</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_hardware_import', serial=unit['serial']) }}" enctype="multipart/form-data">
+    <label>Hardware config JSON <input type="file" name="json_file" accept=".json" required></label>
+    <button type="submit">Import hardware config</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_checklist_save', serial=unit['serial']) }}" enctype="multipart/form-data">
+    <label>Completed checklist file <input type="file" name="checklist_file" required></label>
+    <button type="submit">Save checklist</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_purge_secrets', serial=unit['serial']) }}"
+        onsubmit="return confirm('Purge stored temp passphrases? Only do this after the buyer changed them.');">
+    <p>Wipe stored temp passphrases once the buyer has changed them.</p>
+    <button type="submit">Purge temp secrets</button>
+  </form>
+</div>
+
+<p><a href="{{ url_for('unit_repurpose', serial=unit['serial']) }}">Repurpose this unit &rarr;</a></p>
+{% endblock %}

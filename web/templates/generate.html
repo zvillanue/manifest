@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Generate post-install script</h1>
+<form method="post">
+  <label>OS target
+    <select name="os" required>
+      {% for id, info in os_targets.items() %}
+      <option value="{{ id }}">{{ info.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <fieldset>
+    <legend>Apps</legend>
+    {% for id, app in apps.items() %}
+    <label class="checkbox-row"><input type="checkbox" name="apps" value="{{ id }}"> {{ app.name }}</label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Passwords</legend>
+    <label class="checkbox-row"><input type="checkbox" name="luks_password" checked> Require LUKS passphrase change at first boot</label>
+    <p class="hint">Uncheck if using TPM auto-unlock instead (general PCs) — the script will enroll TPM2 and remove the temp passphrase instead of prompting for a new one.</p>
+    <label class="checkbox-row"><input type="checkbox" name="force_password_change" checked> Force the Unix account password to be changed at next login</label>
+    <label class="checkbox-row"><input type="checkbox" name="uefi_reminder"> Remind me to set a UEFI/BIOS password manually</label>
+    <p class="hint">Can't be automated across vendors from Linux — this just adds a printed reminder for you during refurb.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>System defaults</legend>
+    <label class="checkbox-row"><input type="checkbox" name="auto_updates" checked> Automatic updates</label>
+    <p class="hint">Unattended on apt/dnf. Notify-only on Arch — never runs pacman -Syu unattended.</p>
+    <label class="checkbox-row"><input type="checkbox" name="firewall" checked> Firewall enabled by default</label>
+    <label class="checkbox-row"><input type="checkbox" name="zram_tlp" checked> zram swap + TLP power management</label>
+    <label class="checkbox-row"><input type="checkbox" name="printing_codecs" checked> Printing + media codecs</label>
+    <label class="checkbox-row"><input type="checkbox" name="snapper" checked> Snapper btrfs snapshots</label>
+    <p class="hint">Skipped automatically at runtime if the root filesystem isn't btrfs.</p>
+    <label class="checkbox-row"><input type="checkbox" name="grub_btrfs" checked> grub-btrfs boot-menu rollback</label>
+    <p class="hint">Only actually installed on Arch for now — elsewhere it needs a third-party repo this generator won't add unattended (see README).</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Save as a reusable build (optional)</legend>
+    <label class="checkbox-row"><input type="checkbox" name="save_as_build"> Register this as a build instead of just downloading it</label>
+    <label>Build id <input type="text" name="build_id" placeholder="laptop-tier1-mint-v2"></label>
+    <label>Product line
+      <select name="line"><option value="laptop">laptop</option><option value="pixel">pixel</option></select>
+    </label>
+    <label>Tier
+      <select name="tier"><option value="">(none)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+    </label>
+    <label>Description <input type="text" name="desc"></label>
+  </fieldset>
+
+  <button type="submit">Generate</button>
+</form>
+{% endblock %}

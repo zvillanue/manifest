@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>QR lookup</h1>
+<p>Scan a unit's QR sticker with any camera/QR app — it'll show a meaningless
+random string. Paste that string here to pull up the unit.</p>
+<form method="post">
+  <label>Token <input type="text" name="token" required autofocus placeholder="e.g. lEOZzgGEdLITtoSudjNnIA"></label>
+  <button type="submit">Look up</button>
+</form>
+{% endblock %}
