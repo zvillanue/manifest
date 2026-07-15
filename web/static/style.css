@@ -78,6 +78,10 @@ input, select, button {
   margin-top: 0.25rem;
   min-height: 2.6rem;
 }
+input[type="file"] {
+  width: 100%;
+  max-width: 100%;
+}
 input:focus, select:focus, button:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
