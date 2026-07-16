@@ -89,6 +89,9 @@ def unit_new():
             conn, request.form["line"], int(tier) if tier else None,
             request.form.get("make") or None, request.form.get("model") or None,
             request.form.get("build") or None, request.form.get("mfg_date") or None, words,
+            acquisition_date_str=request.form.get("acquisition_date") or None,
+            acquisition_source=request.form.get("acquisition_source") or None,
+            acquisition_cost=request.form.get("acquisition_cost") or None,
         )
         return render_template("unit_created.html", result=result)
     builds = fl.op_list_builds(conn)
@@ -102,7 +105,10 @@ def unit_detail(serial):
     hw = None
     if unit["hardware_config_json"]:
         hw = json.dumps(json.loads(unit["hardware_config_json"]), indent=2)
-    return render_template("unit_detail.html", unit=unit, hw=hw, statuses=fl.STATUS_FLOW)
+    parts = fl.op_list_part_replacements(conn, serial)
+    return render_template(
+        "unit_detail.html", unit=unit, hw=hw, statuses=fl.STATUS_FLOW, parts=parts
+    )
 
 
 @app.route("/units/<serial>/qr.png")
@@ -152,6 +158,45 @@ def unit_warranty(serial):
     fl.op_warranty(conn, serial, note)
     flash(f"{serial} flagged Warrantied", "ok")
     return redirect(url_for("unit_detail", serial=serial))
+
+
+@app.route("/units/<serial>/acquisition", methods=["POST"])
+def unit_acquisition(serial):
+    conn = fl.get_conn()
+    acq_date = fl.op_set_acquisition(
+        conn, serial, request.form.get("date") or None,
+        request.form.get("source") or None, request.form.get("cost") or None,
+    )
+    flash(f"{serial} acquisition set: {acq_date}", "ok")
+    return redirect(url_for("unit_detail", serial=serial))
+
+
+@app.route("/units/<serial>/parts/new", methods=["GET", "POST"])
+def unit_part_new(serial):
+    conn = fl.get_conn()
+    unit = fl.op_get_unit(conn, serial)
+    if request.method == "POST":
+        part_id = fl.op_add_part_replacement(
+            conn, serial, request.form.get("part_type", "").strip(),
+            request.form.get("replaced_at") or None,
+            old_make=request.form.get("old_make") or None,
+            old_model=request.form.get("old_model") or None,
+            old_model_number=request.form.get("old_model_number") or None,
+            old_serial_number=request.form.get("old_serial_number") or None,
+            old_date_of_mfg=request.form.get("old_date_of_mfg") or None,
+            new_make=request.form.get("new_make") or None,
+            new_model=request.form.get("new_model") or None,
+            new_model_number=request.form.get("new_model_number") or None,
+            new_serial_number=request.form.get("new_serial_number") or None,
+            new_date_of_mfg=request.form.get("new_date_of_mfg") or None,
+            notes=request.form.get("notes") or None,
+        )
+        flash(f"Recorded part replacement #{part_id} ({request.form.get('part_type')}) for {serial}", "ok")
+        return redirect(url_for("unit_detail", serial=serial))
+    return render_template(
+        "unit_part_new.html", unit=unit, part_types=fl.PART_TYPE_SUGGESTIONS,
+        today=date.today().isoformat(),
+    )
 
 
 @app.route("/units/<serial>/repurpose", methods=["GET", "POST"])

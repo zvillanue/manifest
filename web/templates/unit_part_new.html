@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Record a part replacement — {{ unit['serial'] }}</h1>
+<form method="post">
+  <label>Part type
+    <input list="part-types" name="part_type" required placeholder="Battery">
+    <datalist id="part-types">
+      {% for t in part_types %}<option value="{{ t }}">{% endfor %}
+    </datalist>
+  </label>
+  <label>Date replaced <input type="date" name="replaced_at" value="{{ today }}"></label>
+
+  <div class="two-col">
+    <fieldset>
+      <legend>Removed (old part)</legend>
+      <label>Make <input type="text" name="old_make"></label>
+      <label>Model <input type="text" name="old_model"></label>
+      <label>Model number <input type="text" name="old_model_number"></label>
+      <label>Serial number <input type="text" name="old_serial_number"></label>
+      <label>Date of manufacture <input type="date" name="old_date_of_mfg"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Installed (new part)</legend>
+      <label>Make <input type="text" name="new_make"></label>
+      <label>Model <input type="text" name="new_model"></label>
+      <label>Model number <input type="text" name="new_model_number"></label>
+      <label>Serial number <input type="text" name="new_serial_number"></label>
+      <label>Date of manufacture <input type="date" name="new_date_of_mfg"></label>
+    </fieldset>
+  </div>
+
+  <label>Notes <input type="text" name="notes" placeholder="Swelling, replaced under safety concern"></label>
+  <button type="submit">Save part replacement</button>
+</form>
+<p><a href="{{ url_for('unit_detail', serial=unit['serial']) }}">Back to unit</a></p>
+{% endblock %}

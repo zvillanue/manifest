@@ -135,6 +135,10 @@ def get_conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     _ensure_column(conn, "units", "qr_token", "TEXT")
+    _ensure_column(conn, "units", "acquisition_date", "TEXT")
+    _ensure_column(conn, "units", "acquisition_source", "TEXT")
+    _ensure_column(conn, "units", "acquisition_cost", "TEXT")
+    conn.executescript(SCHEMA)  # idempotent (CREATE TABLE IF NOT EXISTS) — picks up new tables
     return conn
 
 
@@ -160,6 +164,9 @@ CREATE TABLE IF NOT EXISTS units (
     oem_model TEXT,
     hardware_config_json TEXT,
     date_of_manufacture TEXT NOT NULL,
+    acquisition_date TEXT,
+    acquisition_source TEXT,
+    acquisition_cost TEXT,
     date_of_sale TEXT,
     sale_price TEXT,
     status TEXT NOT NULL DEFAULT 'Acquired',
@@ -175,6 +182,25 @@ CREATE TABLE IF NOT EXISTS units (
     secrets_purged_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS part_replacements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit_serial TEXT NOT NULL REFERENCES units(serial),
+    part_type TEXT NOT NULL,
+    replaced_at TEXT NOT NULL,
+    old_make TEXT,
+    old_model TEXT,
+    old_model_number TEXT,
+    old_serial_number TEXT,
+    old_date_of_mfg TEXT,
+    new_make TEXT,
+    new_model TEXT,
+    new_model_number TEXT,
+    new_serial_number TEXT,
+    new_date_of_mfg TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -319,7 +345,9 @@ def list_postinstall_files() -> list[str]:
 
 def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: str | None,
                     model: str | None, build: str | None, mfg_date_str: str | None,
-                    words: int, repurposed_from: str | None = None) -> dict:
+                    words: int, repurposed_from: str | None = None,
+                    acquisition_date_str: str | None = None, acquisition_source: str | None = None,
+                    acquisition_cost: str | None = None) -> dict:
     if build:
         exists = conn.execute("SELECT 1 FROM builds WHERE build_id = ?", (build,)).fetchone()
         if not exists:
@@ -328,6 +356,10 @@ def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: 
         mfg_date = date.fromisoformat(mfg_date_str) if mfg_date_str else date.today()
     except ValueError:
         raise FleetError(f"Bad date '{mfg_date_str}', expected YYYY-MM-DD")
+    try:
+        acquisition_date = date.fromisoformat(acquisition_date_str) if acquisition_date_str else None
+    except ValueError:
+        raise FleetError(f"Bad date '{acquisition_date_str}', expected YYYY-MM-DD")
 
     serial = generate_serial(conn, line, tier, mfg_date)
     qr_token = _generate_qr_token(conn)
@@ -336,11 +368,13 @@ def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: 
 
     conn.execute(
         """INSERT INTO units (serial, qr_token, product_line, tier, build_id, oem_make, oem_model,
-               date_of_manufacture, status, repurposed_from, temp_login_passphrase,
+               date_of_manufacture, acquisition_date, acquisition_source, acquisition_cost,
+               status, repurposed_from, temp_login_passphrase,
                temp_uefi_passphrase, temp_luks_passphrase, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (serial, qr_token, line, tier, build, make, model, mfg_date.isoformat(), "Acquired",
-         repurposed_from, login_pp, uefi_pp, luks_pp, now, now),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (serial, qr_token, line, tier, build, make, model, mfg_date.isoformat(),
+         acquisition_date.isoformat() if acquisition_date else None, acquisition_source, acquisition_cost,
+         "Acquired", repurposed_from, login_pp, uefi_pp, luks_pp, now, now),
     )
     conn.commit()
     return {
@@ -348,6 +382,63 @@ def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: 
         "build": build, "mfg_date": mfg_date.isoformat(),
         "login_passphrase": login_pp, "uefi_passphrase": uefi_pp, "luks_passphrase": luks_pp,
     }
+
+
+def op_set_acquisition(conn: sqlite3.Connection, serial: str, date_str: str | None,
+                        source: str | None, cost: str | None) -> str:
+    op_get_unit(conn, serial)
+    try:
+        acq_date = date.fromisoformat(date_str) if date_str else date.today()
+    except ValueError:
+        raise FleetError(f"Bad date '{date_str}', expected YYYY-MM-DD")
+    _touch(
+        conn, serial,
+        acquisition_date=acq_date.isoformat(), acquisition_source=source, acquisition_cost=cost,
+    )
+    return acq_date.isoformat()
+
+
+def op_add_part_replacement(
+    conn: sqlite3.Connection, serial: str, part_type: str, replaced_at_str: str | None,
+    old_make: str | None = None, old_model: str | None = None, old_model_number: str | None = None,
+    old_serial_number: str | None = None, old_date_of_mfg: str | None = None,
+    new_make: str | None = None, new_model: str | None = None, new_model_number: str | None = None,
+    new_serial_number: str | None = None, new_date_of_mfg: str | None = None,
+    notes: str | None = None,
+) -> int:
+    op_get_unit(conn, serial)
+    if not part_type or not part_type.strip():
+        raise FleetError("Part type is required (e.g. Battery, RAM, Storage, Screen).")
+    try:
+        replaced_at = date.fromisoformat(replaced_at_str) if replaced_at_str else date.today()
+    except ValueError:
+        raise FleetError(f"Bad date '{replaced_at_str}', expected YYYY-MM-DD")
+    now = datetime.now().isoformat(timespec="seconds")
+    cur = conn.execute(
+        """INSERT INTO part_replacements (unit_serial, part_type, replaced_at, old_make, old_model,
+               old_model_number, old_serial_number, old_date_of_mfg, new_make, new_model,
+               new_model_number, new_serial_number, new_date_of_mfg, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (serial, part_type.strip(), replaced_at.isoformat(), old_make, old_model, old_model_number,
+         old_serial_number, old_date_of_mfg, new_make, new_model, new_model_number,
+         new_serial_number, new_date_of_mfg, notes, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def op_list_part_replacements(conn: sqlite3.Connection, serial: str) -> list[sqlite3.Row]:
+    op_get_unit(conn, serial)
+    return conn.execute(
+        "SELECT * FROM part_replacements WHERE unit_serial = ? ORDER BY replaced_at DESC, id DESC",
+        (serial,),
+    ).fetchall()
+
+
+PART_TYPE_SUGGESTIONS = [
+    "Battery", "RAM", "Storage (SSD/HDD)", "Screen/Display", "Keyboard",
+    "Trackpad", "Fan/Cooling", "Motherboard", "Charger/PSU", "Camera", "Speaker",
+]
 
 
 def _generate_qr_token(conn: sqlite3.Connection) -> str:

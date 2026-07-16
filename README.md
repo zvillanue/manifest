@@ -450,6 +450,63 @@ tier" discipline:
   OEM make/model, hardware config, dates, status, warranty/repurpose
   flags, checklist copy, temp credentials.
 
+## Acquisition info
+
+Where, when, and how much a unit was acquired for — three fields on the
+`units` row (`acquisition_date`, `acquisition_source`, `acquisition_cost`).
+Set them at creation time:
+
+```sh
+./fleetctl new --line laptop --tier 1 --make Lenovo --model "ThinkPad T480" \
+    --acquisition-date 2026-06-01 --acquisition-source eBay --acquisition-cost 110
+```
+
+or any time after, since the purchase often isn't finalized (or logged)
+the moment you create the unit record:
+
+```sh
+./fleetctl acquisition <serial> --date 2026-06-01 --source eBay --cost 110
+```
+
+Same fields, same command, in the TUI ("Set acquisition info") and web GUI
+(on the "New unit" form, and as an action card on the unit detail page —
+resubmitting just overwrites the current values, there's no history kept
+here unlike part replacements below).
+
+## Part replacements
+
+A running log of hardware swapped during refurb — battery died and got
+replaced, RAM upgraded, that kind of thing. Lives in its own table
+(`part_replacements`), one row per swap, **not** columns on `units` — a unit
+can rack up several of these over its life, and each one records both
+sides of the swap: the part that came out and the part that went in, each
+with make/model/model number/serial number/date of manufacture (all
+optional — a dead battery's manufacture date is often illegible or just
+unknown, so nothing here is required except the part type and the unit).
+
+```sh
+./fleetctl part add <serial> --type Battery --replaced-at 2026-07-10 \
+    --old-make Lenovo --old-model 45N1 --old-serial OLDBAT123 --old-mfg-date 2018-03-01 \
+    --new-make Lenovo --new-model 45N1775 --new-serial NEWBAT456 --new-mfg-date 2025-01-01 \
+    --notes "Swelling, replaced under safety concern"
+
+./fleetctl part list <serial>
+```
+
+`--type` takes any text — there's a suggested list (Battery, RAM, Storage,
+Screen/Display, Keyboard, Trackpad, Fan/Cooling, Motherboard, Charger/PSU,
+Camera, Speaker) offered as autocomplete in the web GUI's `<datalist>` and
+as a pick-list in the TUI, but nothing stops you from typing something
+else. There's no delete/edit for a part replacement record once added —
+same append-only philosophy as the rest of fleetctl (units aren't deleted
+either); if you logged something wrong, add a corrected record and note
+the mistake, don't try to erase it.
+
+`fleetctl show <serial>` and the TUI's "Show unit details" both include the
+full part replacement history inline. The web GUI shows it as its own table
+on the unit detail page, with a "+ Record a part replacement" link to a
+dedicated form (old part / new part side by side).
+
 ## Repurposing
 
 `fleetctl repurpose <serial>` marks the original unit `Repurposed` and

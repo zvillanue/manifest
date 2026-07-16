@@ -28,6 +28,14 @@
   </label>
   <label>Manufacture date <input type="date" name="mfg_date" value="{{ today }}"></label>
   <label>Words per passphrase <input type="number" name="words" value="6" min="3" max="10"></label>
+
+  <fieldset>
+    <legend>Acquisition (optional — can also set this later)</legend>
+    <label>Acquired on <input type="date" name="acquisition_date"></label>
+    <label>Acquired from <input type="text" name="acquisition_source" placeholder="eBay, Craigslist, Facebook Marketplace"></label>
+    <label>Cost <input type="text" name="acquisition_cost" placeholder="110"></label>
+  </fieldset>
+
   <button type="submit">Create unit</button>
 </form>
 {% endblock %}

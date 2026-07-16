@@ -7,6 +7,7 @@
   <tr><th>Build</th><td>{{ unit['build_id'] or '-' }}</td></tr>
   <tr><th>Status</th><td>{{ unit['status'] }}</td></tr>
   <tr><th>Mfg date</th><td>{{ unit['date_of_manufacture'] }}</td></tr>
+  <tr><th>Acquired</th><td>{{ unit['acquisition_date'] or '-' }}{% if unit['acquisition_source'] %} from {{ unit['acquisition_source'] }}{% endif %}{% if unit['acquisition_cost'] %} ({{ unit['acquisition_cost'] }}){% endif %}</td></tr>
   <tr><th>Sale date</th><td>{{ unit['date_of_sale'] or '-' }}{% if unit['sale_price'] %} ({{ unit['sale_price'] }}){% endif %}</td></tr>
   <tr><th>Warrantied</th><td>{{ 'yes' if unit['warrantied'] else 'no' }}</td></tr>
   <tr><th>Repurposed</th><td>{{ 'yes' if unit['repurposed'] else 'no' }}{% if unit['repurposed_from'] %} (from {{ unit['repurposed_from'] }}){% endif %}</td></tr>
@@ -23,6 +24,37 @@
 <h2>Hardware config</h2>
 <pre>{{ hw }}</pre>
 {% endif %}
+
+<h2>Replaced parts</h2>
+{% if parts %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Type</th><th>Replaced</th><th>Old part</th><th>New part</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for p in parts %}
+    <tr>
+      <td>{{ p['part_type'] }}</td>
+      <td>{{ p['replaced_at'] }}</td>
+      <td>
+        {{ [p['old_make'], p['old_model'], p['old_model_number']] | select | join(' / ') or '-' }}
+        {% if p['old_serial_number'] %}<br>S/N {{ p['old_serial_number'] }}{% endif %}
+        {% if p['old_date_of_mfg'] %}<br>mfg {{ p['old_date_of_mfg'] }}{% endif %}
+      </td>
+      <td>
+        {{ [p['new_make'], p['new_model'], p['new_model_number']] | select | join(' / ') or '-' }}
+        {% if p['new_serial_number'] %}<br>S/N {{ p['new_serial_number'] }}{% endif %}
+        {% if p['new_date_of_mfg'] %}<br>mfg {{ p['new_date_of_mfg'] }}{% endif %}
+      </td>
+      <td>{{ p['notes'] or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>No part replacements recorded.</p>
+{% endif %}
+<p><a href="{{ url_for('unit_part_new', serial=unit['serial']) }}">+ Record a part replacement</a></p>
 
 <h2>QR label</h2>
 <p>Encodes a random token meaningless to anyone without access to this
@@ -50,6 +82,13 @@ database — not the serial, not hardware info. Look it up under "QR lookup".</p
   <form method="post" action="{{ url_for('unit_warranty', serial=unit['serial']) }}">
     <label>Warranty note <input type="text" name="note" required></label>
     <button type="submit">File warranty claim</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_acquisition', serial=unit['serial']) }}">
+    <label>Acquired on <input type="date" name="date" value="{{ unit['acquisition_date'] or '' }}"></label>
+    <label>Acquired from <input type="text" name="source" value="{{ unit['acquisition_source'] or '' }}" placeholder="eBay"></label>
+    <label>Cost <input type="text" name="cost" value="{{ unit['acquisition_cost'] or '' }}" placeholder="110"></label>
+    <button type="submit">Set acquisition info</button>
   </form>
 
   <form method="post" action="{{ url_for('unit_hardware_import', serial=unit['serial']) }}" enctype="multipart/form-data">

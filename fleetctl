@@ -22,22 +22,26 @@ from fleetlib import (
     DB_PATH,
     FleetError,
     LINE_PREFIXES,
+    PART_TYPE_SUGGESTIONS,
     STATUS_FLOW,
     gen_passphrase,  # noqa: F401  (re-exported for anyone importing this module)
     generate_db_key,
     get_conn,
     init_db,
+    op_add_part_replacement,
     op_create_unit,
     op_get_unit,
     op_handoff_card,
     op_import_hardware,
     op_list_builds,
+    op_list_part_replacements,
     op_list_units,
     op_purge_secrets,
     op_register_build,
     op_repurpose,
     op_save_checklist,
     op_sell,
+    op_set_acquisition,
     op_set_status,
     op_verify_build,
     op_warranty,
@@ -120,7 +124,10 @@ def _print_new_unit(result: dict) -> None:
 def cmd_new(args: argparse.Namespace) -> None:
     conn = require_db()
     result = op_create_unit(conn, args.line, args.tier, args.make, args.model,
-                             args.build, args.mfg_date, args.words)
+                             args.build, args.mfg_date, args.words,
+                             acquisition_date_str=args.acquisition_date,
+                             acquisition_source=args.acquisition_source,
+                             acquisition_cost=args.acquisition_cost)
     _print_new_unit(result)
 
 
@@ -171,6 +178,47 @@ def cmd_purge_secrets(args: argparse.Namespace) -> None:
     print(f"Purged stored temp passphrases for {args.serial}")
 
 
+def cmd_acquisition(args: argparse.Namespace) -> None:
+    conn = require_db()
+    acq_date = op_set_acquisition(conn, args.serial, args.date, args.source, args.cost)
+    print(f"{args.serial} acquisition: {acq_date}"
+          + (f", source={args.source}" if args.source else "")
+          + (f", cost={args.cost}" if args.cost else ""))
+
+
+def cmd_part_add(args: argparse.Namespace) -> None:
+    conn = require_db()
+    part_id = op_add_part_replacement(
+        conn, args.serial, args.type, args.replaced_at,
+        old_make=args.old_make, old_model=args.old_model, old_model_number=args.old_model_number,
+        old_serial_number=args.old_serial, old_date_of_mfg=args.old_mfg_date,
+        new_make=args.new_make, new_model=args.new_model, new_model_number=args.new_model_number,
+        new_serial_number=args.new_serial, new_date_of_mfg=args.new_mfg_date,
+        notes=args.notes,
+    )
+    print(f"Recorded part replacement #{part_id} ({args.type}) for {args.serial}")
+
+
+def cmd_part_list(args: argparse.Namespace) -> None:
+    conn = require_db()
+    rows = op_list_part_replacements(conn, args.serial)
+    if not rows:
+        print(f"No part replacements recorded for {args.serial}.")
+        return
+    for r in rows:
+        print(f"#{r['id']}  {r['part_type']}  replaced {r['replaced_at']}")
+        old = " / ".join(x for x in (r["old_make"], r["old_model"], r["old_model_number"]) if x)
+        new = " / ".join(x for x in (r["new_make"], r["new_model"], r["new_model_number"]) if x)
+        print(f"    old: {old or '-'}"
+              + (f"  (S/N {r['old_serial_number']})" if r["old_serial_number"] else "")
+              + (f"  (mfg {r['old_date_of_mfg']})" if r["old_date_of_mfg"] else ""))
+        print(f"    new: {new or '-'}"
+              + (f"  (S/N {r['new_serial_number']})" if r["new_serial_number"] else "")
+              + (f"  (mfg {r['new_date_of_mfg']})" if r["new_date_of_mfg"] else ""))
+        if r["notes"]:
+            print(f"    notes: {r['notes']}")
+
+
 def cmd_show(args: argparse.Namespace) -> None:
     conn = require_db()
     unit = op_get_unit(conn, args.serial)
@@ -180,6 +228,11 @@ def cmd_show(args: argparse.Namespace) -> None:
     if hw:
         print("--- hardware_config ---")
         print(json.dumps(json.loads(hw), indent=2))
+    parts = op_list_part_replacements(conn, args.serial)
+    if parts:
+        print("--- part replacements ---")
+        for r in parts:
+            print(json.dumps(dict(r), indent=2))
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -302,9 +355,12 @@ def _tui_main(stdscr) -> None:
         ("Update status", _tui_status),
         ("Mark sold", _tui_sell),
         ("Warranty claim", _tui_warranty),
+        ("Set acquisition info", _tui_acquisition),
         ("Repurpose unit", _tui_repurpose),
         ("Import hardware config", _tui_hardware_import),
         ("Save completed checklist", _tui_checklist_save),
+        ("Add part replacement", _tui_part_add),
+        ("List part replacements", _tui_part_list),
         ("Print handoff card", _tui_handoff_card),
         ("Purge temp secrets", _tui_purge_secrets),
         ("Manage builds", _tui_builds_menu),
@@ -514,6 +570,11 @@ def _tui_show_unit(stdscr, conn):
     lines = json.dumps(d, indent=2).splitlines()
     if hw:
         lines += ["--- hardware_config ---"] + json.dumps(json.loads(hw), indent=2).splitlines()
+    parts = op_list_part_replacements(conn, serial)
+    if parts:
+        lines += ["--- part replacements ---"]
+        for r in parts:
+            lines += json.dumps(dict(r), indent=2).splitlines()
     _text_viewer(stdscr, f"Unit {serial}", lines)
 
 
@@ -547,6 +608,84 @@ def _tui_warranty(stdscr, conn):
         note = _text_prompt(stdscr, "Warranty note (required)")
     op_warranty(conn, serial, note)
     _message_screen(stdscr, f"{serial} flagged Warrantied: {note}")
+
+
+def _tui_acquisition(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    acq_date = _text_prompt(stdscr, "Acquisition date YYYY-MM-DD (blank = today)")
+    source = _text_prompt(stdscr, "Acquired from (e.g. eBay, Craigslist, blank to skip)")
+    cost = _text_prompt(stdscr, "Cost (e.g. 110, blank to skip)")
+    result_date = op_set_acquisition(conn, serial, acq_date or None, source or None, cost or None)
+    _message_screen(stdscr, f"{serial} acquisition: {result_date}"
+                    + (f", source={source}" if source else "") + (f", cost={cost}" if cost else ""))
+
+
+def _tui_part_add(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    part_type = _select_list(stdscr, "Part type", PART_TYPE_SUGGESTIONS + ["(other — type it in)"])
+    if part_type is None:
+        return
+    if part_type == "(other — type it in)":
+        part_type = ""
+        while not part_type:
+            part_type = _text_prompt(stdscr, "Part type")
+    replaced_at = _text_prompt(stdscr, "Date replaced YYYY-MM-DD (blank = today)")
+
+    _message_screen(stdscr, "Now the part that was REMOVED (blank any field you don't know).")
+    old_make = _text_prompt(stdscr, "Old part make")
+    old_model = _text_prompt(stdscr, "Old part model")
+    old_model_number = _text_prompt(stdscr, "Old part model number")
+    old_serial = _text_prompt(stdscr, "Old part serial number")
+    old_mfg_date = _text_prompt(stdscr, "Old part date of manufacture YYYY-MM-DD")
+
+    _message_screen(stdscr, "Now the part that was INSTALLED.")
+    new_make = _text_prompt(stdscr, "New part make")
+    new_model = _text_prompt(stdscr, "New part model")
+    new_model_number = _text_prompt(stdscr, "New part model number")
+    new_serial = _text_prompt(stdscr, "New part serial number")
+    new_mfg_date = _text_prompt(stdscr, "New part date of manufacture YYYY-MM-DD")
+    notes = _text_prompt(stdscr, "Notes (optional)")
+
+    part_id = op_add_part_replacement(
+        conn, serial, part_type, replaced_at or None,
+        old_make=old_make or None, old_model=old_model or None,
+        old_model_number=old_model_number or None, old_serial_number=old_serial or None,
+        old_date_of_mfg=old_mfg_date or None,
+        new_make=new_make or None, new_model=new_model or None,
+        new_model_number=new_model_number or None, new_serial_number=new_serial or None,
+        new_date_of_mfg=new_mfg_date or None,
+        notes=notes or None,
+    )
+    _message_screen(stdscr, f"Recorded part replacement #{part_id} ({part_type}) for {serial}")
+
+
+def _tui_part_list(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    rows = op_list_part_replacements(conn, serial)
+    if not rows:
+        _message_screen(stdscr, f"No part replacements recorded for {serial}.")
+        return
+    lines = []
+    for r in rows:
+        lines.append(f"#{r['id']}  {r['part_type']}  replaced {r['replaced_at']}")
+        old = " / ".join(x for x in (r["old_make"], r["old_model"], r["old_model_number"]) if x)
+        new = " / ".join(x for x in (r["new_make"], r["new_model"], r["new_model_number"]) if x)
+        lines.append(f"  old: {old or '-'}"
+                      + (f"  (S/N {r['old_serial_number']})" if r["old_serial_number"] else "")
+                      + (f"  (mfg {r['old_date_of_mfg']})" if r["old_date_of_mfg"] else ""))
+        lines.append(f"  new: {new or '-'}"
+                      + (f"  (S/N {r['new_serial_number']})" if r["new_serial_number"] else "")
+                      + (f"  (mfg {r['new_date_of_mfg']})" if r["new_date_of_mfg"] else ""))
+        if r["notes"]:
+            lines.append(f"  notes: {r['notes']}")
+        lines.append("")
+    _text_viewer(stdscr, f"Part replacements: {serial}", lines)
 
 
 def _tui_repurpose(stdscr, conn):
@@ -729,6 +868,9 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--build", default=None, help="build id (see `fleetctl build list`)")
     n.add_argument("--mfg-date", default=None, help="YYYY-MM-DD, defaults to today")
     n.add_argument("--words", type=int, default=6, help="words per passphrase (default 6)")
+    n.add_argument("--acquisition-date", default=None, help="YYYY-MM-DD, when you acquired this unit")
+    n.add_argument("--acquisition-source", default=None, help="where you got it, e.g. eBay, Craigslist")
+    n.add_argument("--acquisition-cost", default=None, help="what you paid, e.g. 110")
     n.set_defaults(func=cmd_new)
 
     hi = sub.add_parser("hardware-import", help="Attach a hardware-inventory.sh JSON dump to a unit")
@@ -756,6 +898,38 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("serial")
     w.add_argument("--note", required=True)
     w.set_defaults(func=cmd_warranty)
+
+    ac = sub.add_parser("acquisition", help="Set/update where, when, and how much a unit was acquired for")
+    ac.add_argument("serial")
+    ac.add_argument("--date", default=None, help="YYYY-MM-DD, defaults to today")
+    ac.add_argument("--source", default=None, help="e.g. eBay, Craigslist, Facebook Marketplace")
+    ac.add_argument("--cost", default=None, help="what you paid, e.g. 110")
+    ac.set_defaults(func=cmd_acquisition)
+
+    pt = sub.add_parser("part", help="Record parts swapped during refurb (old part + new part per record)")
+    ptsub = pt.add_subparsers(dest="part_command", required=True)
+
+    pa = ptsub.add_parser("add", help="Record a part replacement")
+    pa.add_argument("serial")
+    pa.add_argument("--type", required=True,
+                     help=f"e.g. {', '.join(PART_TYPE_SUGGESTIONS)}, or anything else")
+    pa.add_argument("--replaced-at", default=None, help="YYYY-MM-DD, defaults to today")
+    pa.add_argument("--old-make", default=None)
+    pa.add_argument("--old-model", default=None)
+    pa.add_argument("--old-model-number", default=None)
+    pa.add_argument("--old-serial", default=None)
+    pa.add_argument("--old-mfg-date", default=None, help="YYYY-MM-DD if known")
+    pa.add_argument("--new-make", default=None)
+    pa.add_argument("--new-model", default=None)
+    pa.add_argument("--new-model-number", default=None)
+    pa.add_argument("--new-serial", default=None)
+    pa.add_argument("--new-mfg-date", default=None, help="YYYY-MM-DD if known")
+    pa.add_argument("--notes", default=None)
+    pa.set_defaults(func=cmd_part_add)
+
+    pl = ptsub.add_parser("list", help="List part replacements for a unit")
+    pl.add_argument("serial")
+    pl.set_defaults(func=cmd_part_list)
 
     rp = sub.add_parser("repurpose", help="Retire a unit and spin up a new linked unit")
     rp.add_argument("serial")

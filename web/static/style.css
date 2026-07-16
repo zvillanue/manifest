@@ -97,6 +97,7 @@ button {
 button:hover { opacity: 0.88; }
 .actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
 .actions-grid form { background: var(--panel); padding: 0.9rem; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 0; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 pre {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -132,5 +133,6 @@ legend { padding: 0 0.4rem; color: var(--muted); font-weight: 600; }
   nav a { padding: 0.5rem 0.3rem; font-size: 0.95rem; }
   table.kv th { width: 40%; }
   .actions-grid { grid-template-columns: 1fr; }
+  .two-col { grid-template-columns: 1fr; }
   button { width: 100%; }
 }
