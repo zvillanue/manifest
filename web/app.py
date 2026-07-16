@@ -341,6 +341,11 @@ def script_generate():
             oem_wallpaper=checkbox("oem_wallpaper"),
             oem_bookmarks=checkbox("oem_bookmarks"),
             oem_guide_folder=checkbox("oem_guide_folder"),
+            hibernate_on_lid_close=checkbox("hibernate_on_lid_close"),
+            wifi_mac_randomization=checkbox("wifi_mac_randomization"),
+            generic_hostname=checkbox("generic_hostname"),
+            idle_lock_timeout=checkbox("idle_lock_timeout"),
+            firefox_privacy_hardening=checkbox("firefox_privacy_hardening"),
         )
         script = generate_script(opts)
 

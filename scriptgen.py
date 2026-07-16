@@ -117,6 +117,11 @@ class GenOptions:
     oem_wallpaper: bool = True
     oem_bookmarks: bool = True
     oem_guide_folder: bool = True
+    hibernate_on_lid_close: bool = True
+    wifi_mac_randomization: bool = True
+    generic_hostname: bool = True
+    idle_lock_timeout: bool = True
+    firefox_privacy_hardening: bool = True
 
 
 def _resolve_app_install(app_id: str, os_id: str, family: str):
@@ -379,12 +384,14 @@ def _section_apps(resolved: dict, family: str) -> str:
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def _firefox_policies_snippet(flatpak_ids: list, ublock_requested: bool, bookmarks_requested: bool) -> str:
-    # Firefox's enterprise policies.json is one file — uBlock Origin's forced
-    # install and the OEM bookmarks both need to land in it, so this builds
-    # one combined policy object and writes it once, rather than each
-    # feature clobbering the other's write.
-    if not (ublock_requested or bookmarks_requested):
+def _firefox_policies_snippet(
+    flatpak_ids: list, ublock_requested: bool, bookmarks_requested: bool, privacy_hardening_requested: bool,
+) -> str:
+    # Firefox's enterprise policies.json is one file — every feature that
+    # needs to touch it (uBlock Origin, OEM bookmarks, privacy hardening)
+    # has to land in the same object, built once, rather than each one
+    # clobbering the others' write.
+    if not (ublock_requested or bookmarks_requested or privacy_hardening_requested):
         return ""
 
     policies: dict = {}
@@ -399,6 +406,14 @@ def _firefox_policies_snippet(flatpak_ids: list, ublock_requested: bool, bookmar
         }
     if bookmarks_requested:
         policies["Bookmarks"] = OEM_BOOKMARKS
+    if privacy_hardening_requested:
+        # "enabled" (not "force_enabled") so the buyer can still turn it off
+        # for a specific broken HTTP-only site — an on-by-default, not a
+        # locked, setting.
+        policies["HttpsOnlyMode"] = "enabled"
+        policies["DisableTelemetry"] = True
+        policies["DisableFirefoxStudies"] = True
+        policies["DisablePocket"] = True
 
     firefox_is_flatpak = "org.mozilla.firefox" in flatpak_ids
     policy_dir = (
@@ -407,7 +422,10 @@ def _firefox_policies_snippet(flatpak_ids: list, ublock_requested: bool, bookmar
     )
     policy_json = json.dumps({"policies": policies}, indent=2)
     label = " + ".join(
-        n for n, requested in (("uBlock Origin", ublock_requested), ("bookmarks", bookmarks_requested)) if requested
+        n for n, requested in (
+            ("uBlock Origin", ublock_requested), ("bookmarks", bookmarks_requested),
+            ("privacy hardening", privacy_hardening_requested),
+        ) if requested
     )
     return f"""\
 echo "==> Firefox policy ({label}) =="
@@ -623,6 +641,155 @@ def _section_guide_folder(opts: GenOptions) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _section_wifi_mac_randomization(opts: GenOptions) -> str:
+    if not opts.wifi_mac_randomization:
+        return ""
+    return """\
+echo "==> Wi-Fi MAC address randomization =="
+if command -v nmcli >/dev/null 2>&1; then
+    mkdir -p /etc/NetworkManager/conf.d
+    cat > /etc/NetworkManager/conf.d/wifi-rand-mac.conf <<'EOS'
+[connection]
+wifi.cloned-mac-address=random
+EOS
+    systemctl restart NetworkManager 2>/dev/null || true
+    echo "A new random Wi-Fi MAC address is used for every connection — prevents this laptop being tracked across networks by its hardware address. Some enterprise/captive-portal Wi-Fi that binds access to a specific MAC may need reconnecting more often as a result."
+else
+    echo "NetworkManager not found — skipping MAC randomization. Set this manually if using a different network manager."
+fi
+"""
+
+
+def _section_generic_hostname(opts: GenOptions) -> str:
+    if not opts.generic_hostname:
+        return ""
+    # No serial baked in here either (same reusable-script rule as
+    # everything else) — a short random suffix instead, both to avoid
+    # leaking the buyer's name/identity via hostname on a shared network,
+    # and to avoid every unit refurbished together colliding on the same
+    # hostname (mDNS conflicts) while several are on the same workshop LAN.
+    return """\
+echo "==> Generic hostname =="
+NEW_HOSTNAME="laptop-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \\n')"
+OLD_HOSTNAME=$(hostname)
+hostnamectl set-hostname "$NEW_HOSTNAME"
+if [ -f /etc/hosts ] && grep -q "127.0.1.1.*$OLD_HOSTNAME" /etc/hosts; then
+    sed -i "s/127.0.1.1.*$OLD_HOSTNAME/127.0.1.1\\t$NEW_HOSTNAME/" /etc/hosts
+fi
+echo "Hostname set to $NEW_HOSTNAME (was $OLD_HOSTNAME) — generic, doesn't leak buyer identity on a shared network."
+"""
+
+
+def _section_idle_lock(opts: GenOptions) -> str:
+    if not opts.idle_lock_timeout:
+        return ""
+    desktop = OS_DESKTOP.get(opts.os_id)
+    if desktop is None:
+        return """\
+echo "==> Idle screen lock =="
+echo "No known default desktop for this OS target — not set automatically. Set an idle timeout + screen lock manually in your desktop's power/privacy settings."
+"""
+    # Same system-wide dconf-default mechanism as the wallpaper section (see
+    # its comment for why: no live session to run gsettings against during
+    # post-install). Separate file from the wallpaper's — dconf merges every
+    # file under db/local.d/, so this doesn't need to coordinate with it,
+    # just repeat the (idempotent, identical) profile/user setup.
+    session_schema = "org/cinnamon/desktop/session" if desktop == "cinnamon" else "org/gnome/desktop/session"
+    saver_schema = "org/cinnamon/desktop/screensaver" if desktop == "cinnamon" else "org/gnome/desktop/screensaver"
+    return f"""\
+echo "==> Idle screen lock (5 minutes) =="
+mkdir -p /etc/dconf/db/local.d /etc/dconf/profile
+cat > /etc/dconf/db/local.d/01-obsidian-lockscreen <<'EOS'
+[{session_schema}]
+idle-delay=uint32 300
+
+[{saver_schema}]
+lock-enabled=true
+lock-delay=uint32 0
+EOS
+cat > /etc/dconf/profile/user <<'EOS'
+user-db:user
+system-db:local
+EOS
+dconf update
+"""
+
+
+def _section_hibernate(opts: GenOptions, family: str) -> str:
+    if not opts.hibernate_on_lid_close:
+        return ""
+    # Hibernate (suspend-to-disk) actually clears RAM and re-requires the
+    # full LUKS passphrase on resume — unlike plain suspend-to-RAM, where the
+    # LUKS key sits in memory the whole time, vulnerable to a cold-boot/DMA
+    # attack against a suspended machine. That's the whole reason to prefer
+    # it here despite the slower resume.
+    #
+    # This only actually enables hibernate if a real (non-zram) swap
+    # PARTITION at least as large as installed RAM is already present.
+    # Auto-provisioning adequate swap where there isn't any (resizing/
+    # creating a swapfile and calculating its resume_offset, which differs
+    # by filesystem — btrfs needs its own no-COW + offset-lookup dance) is
+    # genuinely one of the more failure-prone corners of Linux system setup;
+    # getting it wrong risks a machine that fails to resume or fails to
+    # boot. Consistent with this generator's existing rule elsewhere (grub-
+    # btrfs, TPM enrollment): if it can't be done with confidence, detect
+    # that, fall back to something safe, and print exactly what's needed
+    # rather than guessing.
+    grub_regen = {
+        "apt": "update-grub",
+        "dnf": "grub2-mkconfig -o /boot/grub2/grub.cfg",
+        "pacman": "grub-mkconfig -o /boot/grub/grub.cfg",
+    }[family]
+    initramfs_regen = {
+        "apt": 'echo "RESUME=UUID=$RESUME_UUID" > /etc/initramfs-tools/conf.d/resume\n    update-initramfs -u',
+        "dnf": "dracut -f",
+        "pacman": (
+            "if [ -f /etc/mkinitcpio.conf ] && ! grep -q '\\bresume\\b' /etc/mkinitcpio.conf; then\n"
+            "        sed -i 's/^HOOKS=(\\(.*\\)filesystems\\(.*\\))/HOOKS=(\\1filesystems resume\\2)/' /etc/mkinitcpio.conf\n"
+            "    fi\n    mkinitcpio -P"
+        ),
+    }[family]
+    return f"""\
+echo "==> Hibernate on lid close =="
+RAM_BYTES=$(( $(awk '/MemTotal/ {{print $2}}' /proc/meminfo) * 1024 ))
+RESUME_DEVICE=""
+while read -r SWAP_NAME SWAP_TYPE SWAP_SIZE; do
+    case "$SWAP_NAME" in /dev/zram*) continue ;; esac
+    [ "$SWAP_TYPE" = "partition" ] || continue
+    if [ "$SWAP_SIZE" -ge "$RAM_BYTES" ]; then
+        RESUME_DEVICE="$SWAP_NAME"
+        break
+    fi
+done < <(swapon --show=NAME,TYPE,SIZE --bytes --noheadings 2>/dev/null)
+
+mkdir -p /etc/systemd/logind.conf.d
+if [ -n "$RESUME_DEVICE" ]; then
+    RESUME_UUID=$(blkid -s UUID -o value "$RESUME_DEVICE")
+    if [ -f /etc/default/grub ] && ! grep -q 'resume=' /etc/default/grub; then
+        sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=\\"|GRUB_CMDLINE_LINUX_DEFAULT=\\"resume=UUID=$RESUME_UUID |" /etc/default/grub
+        {grub_regen} || true
+    fi
+    {initramfs_regen} || true
+    cat > /etc/systemd/logind.conf.d/50-obsidian-hibernate.conf <<'EOS'
+[Login]
+HandleLidSwitch=hibernate
+HandleLidSwitchExternalPower=hibernate
+EOS
+    systemctl restart systemd-logind 2>/dev/null || true
+    echo "Hibernate on lid close enabled — resume device: $RESUME_DEVICE"
+else
+    cat > /etc/systemd/logind.conf.d/50-obsidian-hibernate.conf <<'EOS'
+[Login]
+HandleLidSwitch=suspend
+HandleLidSwitchExternalPower=suspend
+EOS
+    systemctl restart systemd-logind 2>/dev/null || true
+    RAM_GB=$(( RAM_BYTES / 1024 / 1024 / 1024 ))
+    echo "No swap partition >= installed RAM (${{RAM_GB}}GB) found — hibernate needs disk-backed swap at least that large, and this generator won't auto-create/resize one (getting the resume offset wrong risks a machine that won't boot). Falling back to suspend-to-RAM + lock on lid close, which does NOT clear the LUKS key from memory the way hibernate does. To enable real hibernate-on-lid-close later: create or resize a swap partition (or a swapfile with a correctly calculated resume_offset) to at least RAM size, then re-run this generator's hibernate step, or configure manually — see https://wiki.archlinux.org/title/Power_management/Suspend_and_hibernate#Hibernation."
+fi
+"""
+
+
 def generate_script(opts: GenOptions) -> str:
     if opts.os_id not in OS_TARGETS:
         raise ValueError(f"Unknown OS target: {opts.os_id}")
@@ -648,11 +815,16 @@ def generate_script(opts: GenOptions) -> str:
         resolved_apps["flatpak_ids"],
         ublock_requested="ublock_origin_firefox_policy" in resolved_apps["special_ids"],
         bookmarks_requested=opts.oem_bookmarks,
+        privacy_hardening_requested=opts.firefox_privacy_hardening,
     )
     if firefox_policy:
         sections.append(firefox_policy)
     sections.append(_section_wallpaper(opts))
     sections.append(_section_guide_folder(opts))
+    sections.append(_section_wifi_mac_randomization(opts))
+    sections.append(_section_generic_hostname(opts))
+    sections.append(_section_idle_lock(opts))
+    sections.append(_section_hibernate(opts, family))
     sections.append(_section_snapper(opts))
     sections.append(_section_grub_btrfs(opts))
     sections.append(_section_passwords(opts))

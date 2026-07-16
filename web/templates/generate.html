@@ -50,6 +50,20 @@
   </fieldset>
 
   <fieldset>
+    <legend>Privacy &amp; power</legend>
+    <label class="checkbox-row"><input type="checkbox" name="hibernate_on_lid_close" checked> Hibernate on lid close</label>
+    <p class="hint">Suspend-to-disk, not suspend-to-RAM — actually clears the LUKS key from memory and re-requires the passphrase on resume, unlike plain suspend. Only enabled if a real (non-zram) swap partition at least as large as installed RAM is already present; otherwise falls back to suspend+lock and prints why (this generator won't auto-create/resize swap — see README).</p>
+    <label class="checkbox-row"><input type="checkbox" name="wifi_mac_randomization" checked> Wi-Fi MAC address randomization</label>
+    <p class="hint">A new random MAC per connection via NetworkManager — prevents tracking this laptop across networks by its hardware address.</p>
+    <label class="checkbox-row"><input type="checkbox" name="generic_hostname" checked> Generic hostname</label>
+    <p class="hint">Replaces the installer-chosen hostname with a random "laptop-xxxxxxxx" one, so it doesn't leak the buyer's name on a shared network.</p>
+    <label class="checkbox-row"><input type="checkbox" name="idle_lock_timeout" checked> Idle screen lock (5 minutes)</label>
+    <p class="hint">Independent of lid-close — covers "walked away without closing the lid." Same GNOME/Cinnamon-only caveat as the wallpaper.</p>
+    <label class="checkbox-row"><input type="checkbox" name="firefox_privacy_hardening" checked> Firefox privacy hardening</label>
+    <p class="hint">HTTPS-Only mode on by default (buyer can still turn it off), telemetry/studies/Pocket disabled — via the same policy file as bookmarks/uBlock Origin.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Save as a reusable build (optional)</legend>
     <label class="checkbox-row"><input type="checkbox" name="save_as_build"> Register this as a build instead of just downloading it</label>
     <label>Build id <input type="text" name="build_id" placeholder="laptop-tier1-mint-v2"></label>

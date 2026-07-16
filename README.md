@@ -441,7 +441,7 @@ these are about the buyer's first-boot experience, not software:
   see `PKG_MANAGER_INFO`) — the same guide files work across all five OS
   targets without duplicating a copy per distro.
 
-
+### Password policy checkboxes
 
 - **Require LUKS passphrase change at first boot** (checked by default): a
   first-login autostart entry opens a terminal and runs `cryptsetup
@@ -467,6 +467,58 @@ these are about the buyer's first-boot experience, not software:
   `cctk` tool can actually do this on Dell hardware specifically, if you
   end up wanting real automation for your Dell volume — ask and I can add
   it as a Dell-specific path.)
+
+### Privacy & power checkboxes
+
+- **Hibernate on lid close** (checked by default) — suspend-to-disk, not
+  suspend-to-RAM. This matters specifically because plain suspend keeps the
+  LUKS decryption key sitting in RAM the whole time, which is vulnerable to
+  a cold-boot/DMA attack against a suspended machine; hibernate clears RAM
+  and re-requires the full LUKS passphrase on resume, which is the actual
+  security property "encrypt on lid close" is asking for.
+
+  This only activates if a real (non-`zram`) swap **partition** at least as
+  large as installed RAM is already present — checked at runtime via
+  `swapon --show=NAME,TYPE,SIZE`. If found, it adds `resume=UUID=...` to the
+  kernel command line (GRUB) if missing, regenerates the initramfs
+  (`update-initramfs`/`dracut`/`mkinitcpio`, with the `resume` hook added to
+  `mkinitcpio.conf` on Arch if it isn't already there), and sets
+  `HandleLidSwitch=hibernate` via `/etc/systemd/logind.conf.d/`.
+
+  If no adequate swap partition exists, it **does not** attempt to create or
+  resize one — auto-provisioning correct hibernate-ready swap (especially a
+  swapfile's `resume_offset`, which differs by filesystem and is genuinely
+  one of the more failure-prone corners of Linux setup) risks leaving a
+  machine that fails to resume or fails to boot. Instead it falls back to
+  `HandleLidSwitch=suspend` and prints exactly what's missing and why,
+  matching this generator's existing rule elsewhere (grub-btrfs, TPM
+  enrollment): if it can't be done with confidence, detect that and say so
+  rather than guess. Verified the swap-detection logic (zram-only, adequate
+  partition, undersized partition, swapfile-not-partization, mixed) and the
+  GRUB/mkinitcpio `sed` edits against realistic sample files before shipping
+  this — no physical hardware needed to check that part.
+
+- **Wi-Fi MAC address randomization** (checked by default) — a
+  `NetworkManager` conf.d drop-in (`wifi.cloned-mac-address=random`)
+  generates a new random MAC for every connection, so this laptop can't be
+  tracked across networks by its hardware address. Skipped with a note if
+  NetworkManager isn't present.
+- **Generic hostname** (checked by default) — replaces whatever the OS
+  installer picked (often the account name) with `laptop-<4 random hex
+  bytes>`, so the buyer's identity isn't visible to anyone else on a shared
+  network. Random per unit rather than fixed, so multiple units refurbished
+  together don't collide on the same hostname on the workshop LAN — same
+  "don't leak identity, don't collide" reasoning as fleetctl's own serial
+  format.
+- **Idle screen lock** (checked by default, 5 minutes) — same `dconf`
+  system-default mechanism as the wallpaper, separate file
+  (`/etc/dconf/db/local.d/01-obsidian-lockscreen`) so it doesn't need to
+  coordinate with it. Same GNOME/Cinnamon-only, Arch-prints-a-note caveat.
+- **Firefox privacy hardening** (checked by default) — `HttpsOnlyMode:
+  "enabled"` (buyer can still turn it off for a specific broken HTTP-only
+  site — not `force_enabled`), plus `DisableTelemetry`, `DisableFirefoxStudies`,
+  and `DisablePocket`. Merges into the same `policies.json` as bookmarks and
+  uBlock Origin — see `_firefox_policies_snippet()`.
 
 ## Builds vs. units
 
