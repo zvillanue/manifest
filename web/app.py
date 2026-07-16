@@ -4,14 +4,14 @@ fleetctl web GUI — thin Flask front end over fleetlib.py, the same core used
 by the `fleetctl` CLI/TUI. No logic lives here beyond HTTP plumbing.
 
 SECURITY: this can display temporary device passphrases in plaintext. Set
-FLEETCTL_WEB_USER + FLEETCTL_WEB_PASSWORD to require HTTP Basic Auth, and
-don't expose this port beyond localhost/your trusted LAN. See README.md.
+FLEETCTL_WEB_USER + FLEETCTL_WEB_PASSWORD to require a login, and don't
+expose this port beyond localhost/your trusted LAN. See README.md.
 """
 
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -20,10 +20,11 @@ from app_catalog import APPS
 from scriptgen import OS_TARGETS, GenOptions, generate_script
 from qrgen import render_qr_png
 
-from flask import Flask, Response, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLEETCTL_SECRET_KEY") or os.urandom(32)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
 WEB_USER = os.environ.get("FLEETCTL_WEB_USER")
 WEB_PASSWORD = os.environ.get("FLEETCTL_WEB_PASSWORD")
@@ -38,16 +39,38 @@ if not (WEB_USER and WEB_PASSWORD):
     )
 
 
+# A real login form (rather than HTTP Basic Auth) so password managers can
+# see and fill/save the fields — browsers' native Basic Auth prompt isn't a
+# <form>, and most password managers don't autofill or offer to save it.
 @app.before_request
 def check_auth():
     if not (WEB_USER and WEB_PASSWORD):
         return None
-    auth = request.authorization
-    if not auth or auth.username != WEB_USER or auth.password != WEB_PASSWORD:
-        return Response(
-            "Authentication required", 401, {"WWW-Authenticate": 'Basic realm="fleetctl"'}
-        )
-    return None
+    if request.endpoint in ("login", "static"):
+        return None
+    if session.get("authed"):
+        return None
+    return redirect(url_for("login", next=request.full_path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not (WEB_USER and WEB_PASSWORD):
+        return redirect(url_for("index"))
+    next_url = request.values.get("next") or url_for("units_list")
+    if request.method == "POST":
+        if request.form.get("username") == WEB_USER and request.form.get("password") == WEB_PASSWORD:
+            session.permanent = True
+            session["authed"] = True
+            return redirect(next_url)
+        flash("Incorrect username or password", "error")
+    return render_template("login.html", next=next_url)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.before_request

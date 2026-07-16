@@ -14,7 +14,7 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     ports:
       # Bound to localhost only by default — this UI can display temporary
-      # device passphrases in plaintext and has no auth unless you set the
+      # device passphrases in plaintext and has no login unless you set the
       # FLEETCTL_WEB_USER/PASSWORD vars below. If you want it reachable from
       # elsewhere on your LAN (e.g. a bench laptop), change this to
       # "4299:4299" — but set those two env vars first.
@@ -25,7 +25,8 @@ services:
       # use — the web UI and `./fleetctl` on the host share one database.
       - .:/app
     environment:
-      # Set both to require HTTP Basic Auth. Recommended even on localhost
+      # Set both to require a login (a real form, not HTTP Basic Auth — so
+      # password managers can fill/save it). Recommended even on localhost
       # if this machine has other users. These reference shell/.env vars
       # (not literal values) so this file stays safe to commit — put the
       # actual values in a local .env file (gitignored) or export them in

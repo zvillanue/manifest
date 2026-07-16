@@ -21,6 +21,9 @@
       <a href="{{ url_for('script_generate') }}">Generate script</a>
       <a href="{{ url_for('qr_lookup') }}">QR lookup</a>
     </nav>
+    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+      <button type="submit" class="link-button">Log out</button>
+    </form>
   </header>
   <main>
     {% with messages = get_flashed_messages(with_categories=true) %}

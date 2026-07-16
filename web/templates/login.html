@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in — fleetctl</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='brand/icon-app.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="login-page">
+    <img src="{{ url_for('static', filename='brand/logo-primary-dark.svg') }}" alt="Obsidian Devices" class="brand-logo">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes">
+        {% for category, message in messages %}
+          <li class="flash-{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    <form method="post" autocomplete="on">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Username
+        <input type="text" name="username" required autofocus autocomplete="username">
+      </label>
+      <label>Password
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+      <button type="submit">Log in</button>
+    </form>
+  </main>
+</body>
+</html>
