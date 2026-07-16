@@ -1,0 +1,20 @@
+GETTING HELP
+==============
+
+If something about this computer isn't working the way you expect, a few
+places to look, roughly in order:
+
+  1. Whoever you got this computer from — start there for anything about
+     the computer itself (hardware, what was set up, warranty questions).
+
+  2. Your desktop's own Settings app — a lot of "how do I..." questions
+     (Wi-Fi, printers, displays, sound, accessibility) are answered there
+     directly, same as Windows/macOS Settings.
+
+  3. {os_name}'s own documentation and community — every mainstream Linux
+     distribution has an active, welcoming community used to newcomer
+     questions. A search like "{os_name} how do I ___" almost always turns
+     up a clear answer, often from the distribution's own official docs.
+
+There's no need to already "know Linux" to ask a question in these
+communities — everyone using Linux started exactly where you are now.

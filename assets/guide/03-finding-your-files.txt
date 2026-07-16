@@ -1,0 +1,21 @@
+FINDING YOUR FILES
+====================
+
+Your personal files live in your Home folder — open the Files app (the
+file manager icon in your taskbar/dock) and it opens there by default.
+Inside, you'll find familiar-looking folders:
+
+  Desktop      — what's shown on your desktop, including this folder
+  Documents    — general files
+  Downloads    — anything downloaded from a browser lands here
+  Pictures     — photos and screenshots
+  Music, Videos — media
+
+There's no separate "C: drive" — everything is under one folder tree
+starting at "/", and you almost never need to think about that. Your Home
+folder is the one that matters day to day.
+
+Plugging in a USB drive or SD card mounts it automatically and shows it in
+the file manager's sidebar, the same as Windows or macOS. Safely remove it
+from there before unplugging (right-click -> Eject, or the eject icon next
+to its name).

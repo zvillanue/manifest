@@ -408,7 +408,40 @@ enterprise policy mechanism instead).
   where to get it manually instead. Worth revisiting if you end up wanting
   this badly enough on Mint/Fedora to accept a third-party repo there.
 
-### Password policy checkboxes
+### OEM branding checkboxes
+
+Three checkboxes (all checked by default), separate from the app catalog —
+these are about the buyer's first-boot experience, not software:
+
+- **Obsidian Devices wallpaper as default background** — `assets/wallpaper.png`
+  (built from the real brand assets in `05 Brand/`, not a placeholder) gets
+  base64-embedded into the generated script, written to
+  `/usr/share/backgrounds/obsidian-devices.png`, and set as the system-wide
+  default via a `dconf` database default (`/etc/dconf/db/local.d/`) — the
+  standard OEM mechanism for this, since there's no live desktop session
+  during post-install to run `gsettings` against directly. Applied on
+  Mint (Cinnamon) and Ubuntu/Debian/Fedora (GNOME) — see `OS_DESKTOP` in
+  `scriptgen.py`. Arch has no assumed default desktop, so the wallpaper file
+  is still installed there, just not set automatically (a note is printed
+  instead).
+- **"Stay Safe Online" default Firefox bookmarks** — EFF, Privacy Guides,
+  Tor Project, ToS;DR, and Have I Been Pwned, added via Firefox's own
+  enterprise policy mechanism (`policies.json`), the same mechanism
+  `ublock-origin` already used — see `OEM_BOOKMARKS` in `scriptgen.py` to
+  change the list. Both this and uBlock Origin write into the *same*
+  `policies.json`, merged into one JSON object by `_firefox_policies_snippet()`
+  rather than each clobbering the other's write — worth knowing if you add a
+  third Firefox-policy-based feature later.
+- **Beginner Linux guide folder on the Desktop** — copies
+  `assets/guide/*.txt` (six short, OS-agnostic docs: installing software,
+  finding files, staying secure, the terminal, getting help) into
+  `~/Desktop/Getting Started with Linux/` for the buyer, owned by the target
+  user. Package-manager commands in the text are filled in per-family at
+  generation time (`{install_cmd}`/`{update_cmd}`/`{search_cmd}` placeholders,
+  see `PKG_MANAGER_INFO`) — the same guide files work across all five OS
+  targets without duplicating a copy per distro.
+
+
 
 - **Require LUKS passphrase change at first boot** (checked by default): a
   first-login autostart entry opens a terminal and runs `cryptsetup
@@ -576,6 +609,10 @@ requirements.txt        sqlcipher3-binary — needed by fleetctl (CLI/TUI), not 
 scriptgen.py            post-install script generator core, shared by CLI + web
 app_catalog.py          the app list scriptgen.py installs from — edit to add an app
 qrgen.py                QR PNG rendering — web-only dependency, not imported by fleetctl
+dolibarr_sync.py         optional Dolibarr customer/invoice push on sale — stdlib-only, see "Selling a unit" above
+assets/wallpaper.png     OEM default wallpaper, embedded into generated scripts (see "OEM branding checkboxes")
+assets/wallpaper.svg     source for wallpaper.png — built from 05 Brand/Logo/logo-stacked-dark.svg
+assets/guide/            beginner Linux guide text files, copied to the buyer's Desktop by the generator
 fleetctl                executable CLI + TUI, thin wrapper over fleetlib.py/scriptgen.py
 web/app.py              Flask GUI, thin wrapper over fleetlib.py/scriptgen.py/qrgen.py
 web/templates/          Jinja2 templates for the web GUI

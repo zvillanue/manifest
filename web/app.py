@@ -338,6 +338,9 @@ def script_generate():
             printing_codecs=checkbox("printing_codecs"),
             grub_btrfs=checkbox("grub_btrfs"),
             snapper=checkbox("snapper"),
+            oem_wallpaper=checkbox("oem_wallpaper"),
+            oem_bookmarks=checkbox("oem_bookmarks"),
+            oem_guide_folder=checkbox("oem_guide_folder"),
         )
         script = generate_script(opts)
 

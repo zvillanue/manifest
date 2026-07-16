@@ -1,0 +1,29 @@
+INSTALLING SOFTWARE
+====================
+
+Most Linux desktops have a "Software Center" style app already installed —
+look for something called Software, Software Manager, or similar in your
+app menu. It works like an app store: search, click Install.
+
+If this computer doesn't have one, or the app you want isn't listed there,
+you have two other options:
+
+1. Flatpak — this computer already has Flatpak and Flathub (a large,
+   community-run app catalog) set up. Many popular apps are available this
+   way even if they're not in the Software Center.
+
+2. The package manager — the same tool the Software Center uses underneath,
+   but from the terminal. On this computer, that's {pkg_manager_name}:
+
+     Install something:  {install_cmd}
+     Update everything:  {update_cmd}
+     Search for a name:  {search_cmd}
+
+You don't need to memorize these — "02 - Installing software.txt" will
+still be here. If you're not comfortable with the terminal, that's what the
+Software Center is for.
+
+One thing to avoid: instructions online that say to download and run a
+random .sh script from an unfamiliar website. Stick to your Software
+Center, Flatpak/Flathub, or {pkg_manager_name} — same rule of thumb as not
+installing random .exe files used to be on Windows.

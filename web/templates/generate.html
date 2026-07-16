@@ -40,6 +40,16 @@
   </fieldset>
 
   <fieldset>
+    <legend>OEM branding</legend>
+    <label class="checkbox-row"><input type="checkbox" name="oem_wallpaper" checked> Obsidian Devices wallpaper as default background</label>
+    <p class="hint">Set system-wide via dconf. Only applied on GNOME/Cinnamon targets (Mint, Ubuntu, Debian, Fedora) — the wallpaper file is still installed on Arch, just not set automatically since there's no assumed default desktop there.</p>
+    <label class="checkbox-row"><input type="checkbox" name="oem_bookmarks" checked> "Stay Safe Online" default Firefox bookmarks</label>
+    <p class="hint">EFF, Privacy Guides, Tor Project, ToS;DR, Have I Been Pwned — via Firefox's enterprise policy, so it applies regardless of how Firefox was installed.</p>
+    <label class="checkbox-row"><input type="checkbox" name="oem_guide_folder" checked> Beginner Linux guide folder on the Desktop</label>
+    <p class="hint">"Getting Started with Linux" — short docs on installing software, finding files, staying secure, and the terminal (optional).</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Save as a reusable build (optional)</legend>
     <label class="checkbox-row"><input type="checkbox" name="save_as_build"> Register this as a build instead of just downloading it</label>
     <label>Build id <input type="text" name="build_id" placeholder="laptop-tier1-mint-v2"></label>

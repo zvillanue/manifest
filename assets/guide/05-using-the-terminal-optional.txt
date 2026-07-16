@@ -1,0 +1,25 @@
+USING THE TERMINAL (OPTIONAL)
+================================
+
+You never have to use the terminal on this computer — everything has a
+graphical way to do it too. But it's genuinely useful once you're
+comfortable, and there's nothing scary about it.
+
+Open it from your app menu — look for "Terminal", "Console", or a
+><_>-style icon. A few commands that are safe to try:
+
+  pwd              show what folder you're currently "in"
+  ls                list files in that folder
+  cd Documents      move into the Documents folder
+  cd ..             move back up one folder
+  {update_cmd}
+                    check for and install system updates
+
+Nothing above changes or deletes anything. Commands that DO make changes
+usually say so clearly, or ask you to confirm — but as a general rule,
+don't paste a command into the terminal from a website you don't trust,
+for the same reason you wouldn't run a random downloaded program.
+
+If a command needs administrator access, it starts with "sudo" and will
+ask for your password — that's normal and expected, not a sign something's
+wrong.

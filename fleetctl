@@ -303,6 +303,9 @@ def _opts_from_args(args: argparse.Namespace) -> GenOptions:
         printing_codecs=not args.no_printing_codecs,
         grub_btrfs=not args.no_grub_btrfs,
         snapper=not args.no_snapper,
+        oem_wallpaper=not args.no_oem_wallpaper,
+        oem_bookmarks=not args.no_oem_bookmarks,
+        oem_guide_folder=not args.no_oem_guide,
     )
 
 
@@ -985,6 +988,12 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--no-printing-codecs", action="store_true")
     sg.add_argument("--no-grub-btrfs", action="store_true")
     sg.add_argument("--no-snapper", action="store_true")
+    sg.add_argument("--no-oem-wallpaper", action="store_true",
+                     help="don't set the Obsidian Devices wallpaper as the default background")
+    sg.add_argument("--no-oem-bookmarks", action="store_true",
+                     help="don't add the 'Stay Safe Online' default Firefox bookmarks")
+    sg.add_argument("--no-oem-guide", action="store_true",
+                     help="don't copy the beginner Linux guide folder to the Desktop")
     sg.add_argument("-o", "--output", default=None, help="write to this path instead of stdout")
     sg.add_argument("--register-build", default=None, metavar="BUILD_ID",
                      help="save under postinstall/generated/<id>.sh and register it as a build")

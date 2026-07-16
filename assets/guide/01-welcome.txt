@@ -1,0 +1,23 @@
+WELCOME TO YOUR OBSIDIAN DEVICES COMPUTER
+==========================================
+
+This is a refurbished computer running Linux ({os_name}) instead of Windows
+or macOS. If you've never used Linux before, that's fine — most of what you
+already know still applies: there's a file manager, a web browser, a way to
+install apps, and a settings menu.
+
+This folder has a few short documents to get you oriented:
+
+  02 - Installing software.txt
+  03 - Finding your files.txt
+  04 - Staying secure.txt
+  05 - Using the terminal (optional).txt
+  06 - Getting help.txt
+
+None of these are required reading — skim what's useful, ignore the rest.
+Nothing on this computer requires the terminal; it's here if you ever want
+it, never because you have to.
+
+One thing worth knowing up front: this machine came with automatic security
+updates already turned on, so you don't need to hunt for them. See
+"04 - Staying secure.txt" for what else was set up before handoff.

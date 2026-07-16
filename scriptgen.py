@@ -29,9 +29,14 @@ Design notes worth knowing before you extend this:
 
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from app_catalog import APPS
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 FAMILIES = ("apt", "dnf", "pacman")
 
@@ -42,6 +47,50 @@ OS_TARGETS = {
     "fedora": {"name": "Fedora Workstation", "family": "dnf"},
     "arch": {"name": "Arch Linux", "family": "pacman"},
 }
+
+# Desktop environment each target actually ships, as far as fleetctl's own
+# builds are concerned — used only to decide how (or whether) to set the OEM
+# wallpaper. Arch has no default DE (it's a DIY install), so wallpaper setup
+# is skipped there rather than guessing.
+OS_DESKTOP = {"mint": "cinnamon", "ubuntu": "gnome", "debian": "gnome", "fedora": "gnome", "arch": None}
+
+PKG_MANAGER_INFO = {
+    "apt": {"name": "apt", "install": "sudo apt install <package>",
+            "update": "sudo apt update && sudo apt upgrade", "search": "apt search <name>"},
+    "dnf": {"name": "dnf", "install": "sudo dnf install <package>",
+            "update": "sudo dnf upgrade", "search": "dnf search <name>"},
+    "pacman": {"name": "pacman", "install": "sudo pacman -S <package>",
+               "update": "sudo pacman -Syu", "search": "pacman -Ss <name>"},
+}
+
+# "Stay safe online" default bookmarks (Firefox policy) — a small,
+# well-known, non-partisan set, not an exhaustive list.
+OEM_BOOKMARKS = [
+    {"Title": "Electronic Frontier Foundation", "URL": "https://www.eff.org/",
+     "Placement": "toolbar", "Folder": "Stay Safe Online"},
+    {"Title": "Privacy Guides", "URL": "https://www.privacyguides.org/",
+     "Placement": "toolbar", "Folder": "Stay Safe Online"},
+    {"Title": "Tor Project", "URL": "https://www.torproject.org/",
+     "Placement": "toolbar", "Folder": "Stay Safe Online"},
+    {"Title": "Terms of Service; Didn't Read", "URL": "https://tosdr.org/",
+     "Placement": "toolbar", "Folder": "Stay Safe Online"},
+    {"Title": "Have I Been Pwned", "URL": "https://haveibeenpwned.com/",
+     "Placement": "toolbar", "Folder": "Stay Safe Online"},
+]
+
+GUIDE_FOLDER_NAME = "Getting Started with Linux"
+
+# (source file in assets/guide/, display filename on the buyer's Desktop) —
+# an explicit mapping rather than derived from the filename, since the
+# display names are referenced by name inside 01-welcome.txt itself.
+GUIDE_FILES = [
+    ("01-welcome.txt", "01 - Welcome.txt"),
+    ("02-installing-software.txt", "02 - Installing software.txt"),
+    ("03-finding-your-files.txt", "03 - Finding your files.txt"),
+    ("04-staying-secure.txt", "04 - Staying secure.txt"),
+    ("05-using-the-terminal-optional.txt", "05 - Using the terminal (optional).txt"),
+    ("06-getting-help.txt", "06 - Getting help.txt"),
+]
 
 # Ubuntu ships Firefox/Thunderbird as transitional snap packages by default,
 # which fights with "I want apps installed via the default package manager
@@ -65,6 +114,9 @@ class GenOptions:
     printing_codecs: bool = True
     grub_btrfs: bool = True
     snapper: bool = True
+    oem_wallpaper: bool = True
+    oem_bookmarks: bool = True
+    oem_guide_folder: bool = True
 
 
 def _resolve_app_install(app_id: str, os_id: str, family: str):
@@ -287,7 +339,7 @@ pacman -S --noconfirm --needed gst-plugins-good gst-plugins-bad gst-plugins-ugly
 """
 
 
-def _section_apps(opts: GenOptions, family: str) -> str:
+def _resolve_apps(opts: GenOptions, family: str) -> dict:
     system_pkgs, flatpak_ids, manual_notes, special_ids, skipped = [], [], [], [], []
     for app_id in opts.apps:
         if app_id not in APPS:
@@ -304,47 +356,64 @@ def _section_apps(opts: GenOptions, family: str) -> str:
             special_ids.append(value)
         else:
             skipped.append(value)
+    return {
+        "system_pkgs": system_pkgs, "flatpak_ids": flatpak_ids,
+        "manual_notes": manual_notes, "special_ids": special_ids, "skipped": skipped,
+    }
 
+
+def _section_apps(resolved: dict, family: str) -> str:
     lines = []
-    if system_pkgs:
+    if resolved["system_pkgs"]:
         install = {"apt": "apt-get install -y", "dnf": "dnf install -y",
                    "pacman": "pacman -S --noconfirm --needed"}[family]
         lines.append('echo "==> Installing apps (system package manager) =="')
-        lines.append(f"{install} {' '.join(system_pkgs)}")
-    if flatpak_ids:
+        lines.append(f"{install} {' '.join(resolved['system_pkgs'])}")
+    if resolved["flatpak_ids"]:
         lines.append('echo "==> Installing apps (Flatpak) =="')
-        lines.append(f"flatpak install -y flathub {' '.join(flatpak_ids)}")
-    if "ublock_origin_firefox_policy" in special_ids:
-        lines.append(_ublock_origin_policy_snippet(system_pkgs, flatpak_ids))
-    for note in manual_notes:
+        lines.append(f"flatpak install -y flathub {' '.join(resolved['flatpak_ids'])}")
+    for note in resolved["manual_notes"]:
         lines.append(f'echo "NOTE: {note}"')
-    for note in skipped:
+    for note in resolved["skipped"]:
         lines.append(f'echo "SKIPPED: {note}"')
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def _ublock_origin_policy_snippet(system_pkgs: list, flatpak_ids: list) -> str:
-    # Firefox Enterprise Policy pre-installs and locks the extension so it's
-    # there on first launch without the buyer needing to find it themselves.
+def _firefox_policies_snippet(flatpak_ids: list, ublock_requested: bool, bookmarks_requested: bool) -> str:
+    # Firefox's enterprise policies.json is one file — uBlock Origin's forced
+    # install and the OEM bookmarks both need to land in it, so this builds
+    # one combined policy object and writes it once, rather than each
+    # feature clobbering the other's write.
+    if not (ublock_requested or bookmarks_requested):
+        return ""
+
+    policies: dict = {}
+    if ublock_requested:
+        # Pre-installs and locks the extension so it's there on first
+        # launch without the buyer needing to find it themselves.
+        policies["ExtensionSettings"] = {
+            "uBlock0@raymondhill.net": {
+                "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi",
+                "installation_mode": "force_installed",
+            }
+        }
+    if bookmarks_requested:
+        policies["Bookmarks"] = OEM_BOOKMARKS
+
     firefox_is_flatpak = "org.mozilla.firefox" in flatpak_ids
     policy_dir = (
         '"$TARGET_HOME/.var/app/org.mozilla.firefox/config/firefox/distribution"'
         if firefox_is_flatpak else "/etc/firefox/policies"
     )
+    policy_json = json.dumps({"policies": policies}, indent=2)
+    label = " + ".join(
+        n for n, requested in (("uBlock Origin", ublock_requested), ("bookmarks", bookmarks_requested)) if requested
+    )
     return f"""\
-echo "==> uBlock Origin (Firefox policy install) =="
+echo "==> Firefox policy ({label}) =="
 mkdir -p {policy_dir}
 cat > {policy_dir}/policies.json <<'EOS'
-{{
-  "policies": {{
-    "ExtensionSettings": {{
-      "uBlock0@raymondhill.net": {{
-        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi",
-        "installation_mode": "force_installed"
-      }}
-    }}
-  }}
-}}
+{policy_json}
 EOS
 """
 
@@ -491,6 +560,69 @@ fi
 """
 
 
+def _section_wallpaper(opts: GenOptions) -> str:
+    if not opts.oem_wallpaper:
+        return ""
+    b64 = base64.b64encode((ASSETS_DIR / "wallpaper.png").read_bytes()).decode()
+    install_file = f"""\
+mkdir -p /usr/share/backgrounds
+base64 -d > /usr/share/backgrounds/obsidian-devices.png <<'EOS'
+{b64}
+EOS
+"""
+    desktop = OS_DESKTOP.get(opts.os_id)
+    if desktop is None:
+        return f"""\
+echo "==> OEM wallpaper =="
+{install_file}\
+echo "No known default desktop for this OS target, so the wallpaper wasn't set automatically — image is at /usr/share/backgrounds/obsidian-devices.png, set it manually in your desktop's background settings."
+"""
+    # GNOME and Cinnamon both read their background settings via dconf/gsettings
+    # under the same key names, just different schema paths — a system-wide
+    # dconf default (rather than gsettings against a live session, which isn't
+    # available yet during post-install) is the standard OEM approach here.
+    dconf_path = "org/cinnamon/desktop/background" if desktop == "cinnamon" else "org/gnome/desktop/background"
+    return f"""\
+echo "==> OEM wallpaper =="
+{install_file}\
+echo "==> Setting as default desktop background ({desktop}) =="
+mkdir -p /etc/dconf/db/local.d /etc/dconf/profile
+cat > /etc/dconf/db/local.d/00-obsidian-wallpaper <<'EOS'
+[{dconf_path}]
+picture-uri='file:///usr/share/backgrounds/obsidian-devices.png'
+picture-uri-dark='file:///usr/share/backgrounds/obsidian-devices.png'
+picture-options='zoom'
+EOS
+cat > /etc/dconf/profile/user <<'EOS'
+user-db:user
+system-db:local
+EOS
+dconf update
+"""
+
+
+def _section_guide_folder(opts: GenOptions) -> str:
+    if not opts.oem_guide_folder:
+        return ""
+    family = OS_TARGETS[opts.os_id]["family"]
+    pkg = PKG_MANAGER_INFO[family]
+    guide_dir = ASSETS_DIR / "guide"
+
+    lines = [
+        'echo "==> Getting-started guide (Desktop folder) =="',
+        f'GUIDE_DIR="$TARGET_HOME/Desktop/{GUIDE_FOLDER_NAME}"',
+        'mkdir -p "$GUIDE_DIR"',
+    ]
+    for src_name, dest_name in GUIDE_FILES:
+        content = (guide_dir / src_name).read_text().format(
+            os_name=OS_TARGETS[opts.os_id]["name"], pkg_manager_name=pkg["name"],
+            install_cmd=pkg["install"], update_cmd=pkg["update"], search_cmd=pkg["search"],
+        )
+        lines.append(f"cat > \"$GUIDE_DIR/{dest_name}\" <<'EOS'\n{content}EOS")
+    lines.append('chown -R "$TARGET_USER:$TARGET_USER" "$GUIDE_DIR"')
+    return "\n".join(lines) + "\n"
+
+
 def generate_script(opts: GenOptions) -> str:
     if opts.os_id not in OS_TARGETS:
         raise ValueError(f"Unknown OS target: {opts.os_id}")
@@ -509,8 +641,18 @@ def generate_script(opts: GenOptions) -> str:
         sections.append(_section_zram_tlp(family))
     if opts.printing_codecs:
         sections.append(_section_printing_codecs(family))
+    resolved_apps = _resolve_apps(opts, family)
     if opts.apps:
-        sections.append(_section_apps(opts, family))
+        sections.append(_section_apps(resolved_apps, family))
+    firefox_policy = _firefox_policies_snippet(
+        resolved_apps["flatpak_ids"],
+        ublock_requested="ublock_origin_firefox_policy" in resolved_apps["special_ids"],
+        bookmarks_requested=opts.oem_bookmarks,
+    )
+    if firefox_policy:
+        sections.append(firefox_policy)
+    sections.append(_section_wallpaper(opts))
+    sections.append(_section_guide_folder(opts))
     sections.append(_section_snapper(opts))
     sections.append(_section_grub_btrfs(opts))
     sections.append(_section_passwords(opts))

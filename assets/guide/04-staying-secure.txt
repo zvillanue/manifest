@@ -1,0 +1,30 @@
+STAYING SECURE
+================
+
+A few things about how this computer was set up, and a few habits worth
+keeping:
+
+WHAT'S ALREADY IN PLACE
+  - The disk is encrypted (LUKS) — you were asked to set your own
+    passphrase at first boot. If you skipped that, do it soon; ask
+    wherever you got this computer if you're not sure how.
+  - Automatic security updates are on by default, if this build enabled
+    them — you don't need to go looking for update notifications, but
+    it's still worth rebooting occasionally so updates that need a restart
+    actually take effect.
+  - A firewall is active by default, if this build enabled one — it blocks
+    unsolicited incoming connections without you needing to configure
+    anything.
+
+HABITS WORTH KEEPING
+  - Lock your screen when you step away (usually Super+L, or the lock icon
+    in the top-right menu).
+  - Keep the account password you set at first login private, and don't
+    reuse it elsewhere — a password manager (see the browser bookmarks
+    folder, if one was set up on this build) makes that painless.
+  - Software updates matter more than almost anything else you can do —
+    when your Software Center or terminal offers updates, take them.
+
+If a browser bookmarks folder called "Stay Safe Online" was set up on this
+computer, it points to a few well-regarded, non-partisan resources on
+digital privacy and security — worth a skim even if you're experienced.
