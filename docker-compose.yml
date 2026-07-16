@@ -43,4 +43,12 @@ services:
       # Do not hardcode the actual key value in this file — it's version
       # controlled and this file is meant to be safe to commit.
       - FLEETCTL_DB_KEY=${FLEETCTL_DB_KEY:?set FLEETCTL_DB_KEY before running compose}
+      # Optional — push a customer + invoice into Dolibarr whenever a unit is
+      # marked Sold (see dolibarr_sync.py). Left unset, this is a silent
+      # no-op; fleetctl's own DB stays the source of truth for inventory
+      # either way. DOLIBARR_API_URL is the API base, e.g.
+      # https://dolibarr.tail77a74d.ts.net/api/index.php — DOLIBARR_API_KEY
+      # comes from Dolibarr's Setup > API, per-user API key.
+      - DOLIBARR_API_URL=${DOLIBARR_API_URL:-}
+      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY:-}
     restart: unless-stopped

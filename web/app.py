@@ -166,7 +166,10 @@ def unit_status(serial):
 @app.route("/units/<serial>/sell", methods=["POST"])
 def unit_sell(serial):
     conn = fl.get_conn()
-    sale_date = fl.op_sell(conn, serial, request.form.get("date") or None, request.form.get("price") or None)
+    sale_date = fl.op_sell(
+        conn, serial, request.form.get("date") or None, request.form.get("price") or None,
+        request.form.get("buyer_name") or None, request.form.get("buyer_email") or None,
+    )
     flash(f"{serial} marked Sold on {sale_date}", "ok")
     return redirect(url_for("unit_detail", serial=serial))
 

@@ -152,7 +152,7 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 def cmd_sell(args: argparse.Namespace) -> None:
     conn = require_db()
-    sale_date = op_sell(conn, args.serial, args.date, args.price)
+    sale_date = op_sell(conn, args.serial, args.date, args.price, args.buyer_name, args.buyer_email)
     print(f"{args.serial} marked Sold on {sale_date}" + (f" for {args.price}" if args.price else ""))
 
 
@@ -595,7 +595,9 @@ def _tui_sell(stdscr, conn):
         return
     sale_date = _text_prompt(stdscr, "Sale date YYYY-MM-DD (blank = today)")
     price = _text_prompt(stdscr, "Sale price (blank to skip)")
-    result_date = op_sell(conn, serial, sale_date or None, price or None)
+    buyer_name = _text_prompt(stdscr, "Buyer name (blank to skip)")
+    buyer_email = _text_prompt(stdscr, "Buyer email (blank to skip)")
+    result_date = op_sell(conn, serial, sale_date or None, price or None, buyer_name or None, buyer_email or None)
     _message_screen(stdscr, f"{serial} marked Sold on {result_date}" + (f" for {price}" if price else ""))
 
 
@@ -892,6 +894,8 @@ def build_parser() -> argparse.ArgumentParser:
     sl.add_argument("serial")
     sl.add_argument("--date", default=None, help="YYYY-MM-DD, defaults to today")
     sl.add_argument("--price", default=None)
+    sl.add_argument("--buyer-name", default=None, help="Used to create/find the customer in Dolibarr, if configured")
+    sl.add_argument("--buyer-email", default=None)
     sl.set_defaults(func=cmd_sell)
 
     w = sub.add_parser("warranty", help="Flag a unit as warrantied and log a note")

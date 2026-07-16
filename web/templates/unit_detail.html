@@ -9,6 +9,7 @@
   <tr><th>Mfg date</th><td>{{ unit['date_of_manufacture'] }}</td></tr>
   <tr><th>Acquired</th><td>{{ unit['acquisition_date'] or '-' }}{% if unit['acquisition_source'] %} from {{ unit['acquisition_source'] }}{% endif %}{% if unit['acquisition_cost'] %} ({{ unit['acquisition_cost'] }}){% endif %}</td></tr>
   <tr><th>Sale date</th><td>{{ unit['date_of_sale'] or '-' }}{% if unit['sale_price'] %} ({{ unit['sale_price'] }}){% endif %}</td></tr>
+  <tr><th>Buyer</th><td>{{ unit['buyer_name'] or '-' }}{% if unit['buyer_email'] %} &lt;{{ unit['buyer_email'] }}&gt;{% endif %}</td></tr>
   <tr><th>Warrantied</th><td>{{ 'yes' if unit['warrantied'] else 'no' }}</td></tr>
   <tr><th>Repurposed</th><td>{{ 'yes' if unit['repurposed'] else 'no' }}{% if unit['repurposed_from'] %} (from {{ unit['repurposed_from'] }}){% endif %}</td></tr>
   <tr><th>Checklist</th><td>{% if unit['checklist_path'] %}{{ unit['checklist_path'] }} ({{ unit['checklist_completed_at'] }}){% else %}none saved{% endif %}</td></tr>
@@ -76,6 +77,8 @@ database — not the serial, not hardware info. Look it up under "QR lookup".</p
   <form method="post" action="{{ url_for('unit_sell', serial=unit['serial']) }}">
     <label>Sale date <input type="date" name="date"></label>
     <label>Price <input type="text" name="price" placeholder="280"></label>
+    <label>Buyer name <input type="text" name="buyer_name" value="{{ unit['buyer_name'] or '' }}"></label>
+    <label>Buyer email <input type="email" name="buyer_email" value="{{ unit['buyer_email'] or '' }}"></label>
     <button type="submit">Mark sold</button>
   </form>
 

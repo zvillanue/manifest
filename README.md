@@ -473,6 +473,44 @@ Same fields, same command, in the TUI ("Set acquisition info") and web GUI
 resubmitting just overwrites the current values, there's no history kept
 here unlike part replacements below).
 
+## Selling a unit, and syncing the sale to Dolibarr
+
+`fleetctl sell <serial>` takes an optional `--buyer-name` and `--buyer-email`
+in addition to `--date`/`--price` (same fields in the TUI's "Mark sold" flow
+and the web GUI's sell form). fleetctl itself has no CRM/invoicing —
+buyer name/email here exist only to identify the customer if you use the
+optional Dolibarr sync described below; they aren't used for anything else.
+
+```sh
+./fleetctl sell LT1-260713-D05-5 --price 280 \
+    --buyer-name "Jane Doe" --buyer-email jane@example.com
+```
+
+**Optional: push the sale into [Dolibarr](https://www.dolibarr.org/)** (an
+open-source CRM/invoicing/accounting suite) rather than building any of that
+into fleetctl itself. Set both `DOLIBARR_API_URL` (Dolibarr's REST API base,
+e.g. `https://your-dolibarr-host/api/index.php`) and `DOLIBARR_API_KEY`
+(Setup > API in Dolibarr, per-user key) before running fleetctl — CLI, TUI,
+and the web GUI (via `docker-compose.yml`) all read the same two env vars.
+Left unset, this is a silent no-op; fleetctl's own database stays the source
+of truth for inventory regardless of whether Dolibarr is configured or even
+reachable.
+
+When both are set, `sell` will (best-effort, in `dolibarr_sync.py`):
+
+1. Find an existing Dolibarr customer by `--buyer-email`, or create one from
+   `--buyer-name`/`--buyer-email` if none matches (or none is found — a
+   fresh customer is created from the name alone if no email was given).
+2. Create and validate an invoice for the sale price, one line item
+   describing the unit (make/model/serial).
+
+If `--buyer-name` is omitted, the sync is skipped for that sale (a warning
+is printed — Dolibarr needs at least a name to create a customer). If
+Dolibarr is unreachable or the API call fails for any other reason, that's
+also just a warning on stderr — it never blocks recording the sale in
+fleetctl's own database. The invoice is left **unpaid** in Dolibarr (validated,
+not marked paid) — record payment there once you've actually collected it.
+
 ## Part replacements
 
 A running log of hardware swapped during refurb — battery died and got

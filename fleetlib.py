@@ -32,6 +32,8 @@ except ImportError as e:
         "at rest). Install it with: pip install -r requirements.txt"
     ) from e
 
+import dolibarr_sync
+
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "fleetctl.db"
 WORDLIST_PATH = ROOT / "wordlist" / "eff_large_wordlist.txt"
@@ -138,6 +140,8 @@ def get_conn() -> sqlite3.Connection:
     _ensure_column(conn, "units", "acquisition_date", "TEXT")
     _ensure_column(conn, "units", "acquisition_source", "TEXT")
     _ensure_column(conn, "units", "acquisition_cost", "TEXT")
+    _ensure_column(conn, "units", "buyer_name", "TEXT")
+    _ensure_column(conn, "units", "buyer_email", "TEXT")
     conn.executescript(SCHEMA)  # idempotent (CREATE TABLE IF NOT EXISTS) — picks up new tables
     return conn
 
@@ -169,6 +173,8 @@ CREATE TABLE IF NOT EXISTS units (
     acquisition_cost TEXT,
     date_of_sale TEXT,
     sale_price TEXT,
+    buyer_name TEXT,
+    buyer_email TEXT,
     status TEXT NOT NULL DEFAULT 'Acquired',
     warrantied INTEGER NOT NULL DEFAULT 0,
     warranty_notes TEXT,
@@ -540,13 +546,21 @@ def op_set_status(conn: sqlite3.Connection, serial: str, new_status: str) -> Non
     _touch(conn, serial, status=new_status)
 
 
-def op_sell(conn: sqlite3.Connection, serial: str, date_str: str | None, price: str | None) -> str:
-    op_get_unit(conn, serial)
+def op_sell(
+    conn: sqlite3.Connection, serial: str, date_str: str | None, price: str | None,
+    buyer_name: str | None = None, buyer_email: str | None = None,
+) -> str:
+    unit = op_get_unit(conn, serial)
     try:
         sale_date = date.fromisoformat(date_str) if date_str else date.today()
     except ValueError:
         raise FleetError(f"Bad date '{date_str}', expected YYYY-MM-DD")
-    _touch(conn, serial, date_of_sale=sale_date.isoformat(), sale_price=price, status="Sold")
+    _touch(
+        conn, serial, date_of_sale=sale_date.isoformat(), sale_price=price,
+        buyer_name=buyer_name, buyer_email=buyer_email, status="Sold",
+    )
+    description = f"{unit['oem_make'] or ''} {unit['oem_model'] or ''} ({serial})".strip()
+    dolibarr_sync.sync_sale(serial, description, price, sale_date.isoformat(), buyer_name, buyer_email)
     return sale_date.isoformat()
 
 
