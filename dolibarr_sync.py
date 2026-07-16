@@ -52,7 +52,14 @@ def _request(base_url: str, api_key: str, method: str, path: str, body: dict | N
 def _find_or_create_thirdparty(base_url: str, api_key: str, buyer_name: str, buyer_email: str | None) -> int:
     if buyer_email:
         sqlfilters = urllib.parse.quote(f"(t.email:=:'{buyer_email}')")
-        matches = _request(base_url, api_key, "GET", f"/thirdparties?sqlfilters={sqlfilters}")
+        try:
+            matches = _request(base_url, api_key, "GET", f"/thirdparties?sqlfilters={sqlfilters}")
+        except urllib.error.HTTPError as e:
+            # Dolibarr's search endpoints return 404 (not an empty list) when
+            # nothing matches — that's "no existing customer", not a failure.
+            if e.code != 404:
+                raise
+            matches = None
         if matches:
             return int(matches[0]["id"])
     payload = {"name": buyer_name, "client": 1}
