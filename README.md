@@ -440,6 +440,11 @@ these are about the buyer's first-boot experience, not software:
   generation time (`{install_cmd}`/`{update_cmd}`/`{search_cmd}` placeholders,
   see `PKG_MANAGER_INFO`) — the same guide files work across all five OS
   targets without duplicating a copy per distro.
+- **Obsidian Installer (double-click .deb/.rpm/.flatpak installs)** —
+  registers a small GUI as the default handler for these file types, so a
+  buyer who downloads an installer from some app's website can double-click
+  it instead of using the terminal. See **Obsidian Installer** above for how
+  it decides what it can and can't install.
 
 ### Password policy checkboxes
 
@@ -519,6 +524,62 @@ these are about the buyer's first-boot experience, not software:
   site — not `force_enabled`), plus `DisableTelemetry`, `DisableFirefoxStudies`,
   and `DisablePocket`. Merges into the same `policies.json` as bookmarks and
   uBlock Origin — see `_firefox_policies_snippet()`.
+
+## Obsidian Installer (double-click .deb/.rpm/.flatpak installs)
+
+`installer_gui/` is a small PySide6 GUI, separate from `fleetlib.py`/`fleetctl`/
+`web/` on purpose (see **Extending** below) so this GUI-only dependency never
+touches the CLI/TUI's zero-dependency-except-SQLCipher import path. It exists
+because a buyer who downloads a `.deb`, `.rpm`, or Flatpak file from some
+app's own website has no GUI way to install it without opening a terminal —
+`assets/guide/02-installing-software.txt` covers the Software Center and
+Flatpak/Flathub cases, but not "I already have the file."
+
+Double-clicking a package file in the file manager launches
+`obsidian-installer <path>`, which shows what the file is, whether this
+machine can actually install it, and an Install button:
+
+- **Flatpak** (`.flatpak`/`.flatpakref`) always works, since fleetctl's own
+  post-install script sets up Flatpak + the Flathub remote unconditionally on
+  every OS target (see `_section_package_manager()`). Installed with
+  `flatpak install --user`, deliberately **not** run via `pkexec` — a per-user
+  install needs no root at all, so there's no password prompt.
+- **`.deb`** only installs on the apt family, **`.rpm`** only on the dnf
+  family, each via `pkexec apt-get install -y <file>` /
+  `pkexec dnf install -y <file>` (so dependencies resolve, and the buyer is
+  prompted for their password once by the desktop's own polkit agent). If the
+  file and the machine don't match — most notably any `.deb`/`.rpm` on
+  Arch — it says so plainly and suggests checking Flathub instead, rather
+  than attempting an `alien`/`debtap`-style conversion. There's no reliable
+  way to convert those formats, and a half-working converted package is worse
+  than a clear "this won't work here" message.
+
+Two independent ways this reaches a machine:
+
+1. **Pre-installed on units you build** — the post-install script generator
+   embeds `installer_gui/{app,distro,installers}.py` directly into the
+   generated script (same base64-into-heredoc pattern as the wallpaper
+   image), and has it installed with a dedicated venv + `pip install PySide6`
+   **on the target machine itself** at image time — not the prebuilt
+   PyInstaller binary below. That sidesteps PyInstaller's Linux
+   glibc-portability problem entirely, since it's built against whatever
+   glibc that exact unit already has. See the **Obsidian Installer** checkbox
+   under **OEM branding checkboxes**; toggle off with `--no-obsidian-installer`
+   (CLI) or the checkbox (web).
+2. **Standalone download from the website**, for non-customers or a buyer
+   reinstalling from scratch — `installer_gui/packaging/build_standalone.sh`
+   builds a portable `--onefile` PyInstaller binary. Read the caveat at the
+   top of that script before running it: **build it on the oldest glibc
+   among fleetctl's targets (Debian stable), not your Arch dev machine** —
+   Linux PyInstaller binaries link the build machine's glibc and only run
+   forward-compatible, not backward.
+
+Either way, `installer_gui/packaging/install-integration.sh` is the one place
+that knows how to register the `.desktop` entry, the MIME types, and the
+system-wide default-application associations — the post-install script and a
+standalone build both call it unchanged, just pointing at different binaries
+(a thin venv-wrapper shell script vs. the PyInstaller output), so there's no
+duplicated registration logic to keep in sync.
 
 ## Builds vs. units
 

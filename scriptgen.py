@@ -37,6 +37,7 @@ from pathlib import Path
 from app_catalog import APPS
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+INSTALLER_GUI_DIR = Path(__file__).resolve().parent / "installer_gui"
 
 FAMILIES = ("apt", "dnf", "pacman")
 
@@ -122,6 +123,7 @@ class GenOptions:
     generic_hostname: bool = True
     idle_lock_timeout: bool = True
     firefox_privacy_hardening: bool = True
+    obsidian_installer: bool = True
 
 
 def _resolve_app_install(app_id: str, os_id: str, family: str):
@@ -641,6 +643,71 @@ def _section_guide_folder(opts: GenOptions) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _section_obsidian_installer(opts: GenOptions, family: str) -> str:
+    """Ships installer_gui/ (the double-click .deb/.rpm/.flatpak installer)
+    onto the unit as plain Python run through a dedicated venv, rather than
+    the prebuilt PyInstaller binary from installer_gui/packaging/build_standalone.sh.
+
+    That prebuilt binary is for the website-download path only — Linux
+    PyInstaller builds link the build machine's glibc and aren't portable
+    across distros (see build_standalone.sh's own note), whereas running on
+    the target's own interpreter here sidesteps that entirely.
+
+    Reuses install-integration.sh unchanged for the actual MIME/.desktop/
+    default-app registration, so there's exactly one place that knows how to
+    do that, shared with the standalone-download build.
+    """
+    if not opts.obsidian_installer:
+        return ""
+
+    gui_dir = INSTALLER_GUI_DIR
+    app_py = (gui_dir / "app.py").read_text()
+    distro_py = (gui_dir / "distro.py").read_text()
+    installers_py = (gui_dir / "installers.py").read_text()
+    desktop_file = (gui_dir / "packaging" / "obsidian-installer.desktop").read_text()
+    mime_file = (gui_dir / "packaging" / "mime" / "obsidian-installer-mime.xml").read_text()
+    integration_script = (gui_dir / "packaging" / "install-integration.sh").read_text()
+
+    venv_pkg_install = {
+        "apt": "apt-get install -y python3-venv python3-pip",
+        "dnf": "dnf install -y python3-pip",
+        "pacman": "pacman -S --noconfirm --needed python-pip",
+    }[family]
+
+    wrapper_script = (
+        "#!/bin/sh\n"
+        'exec /opt/obsidian-installer/venv/bin/python /opt/obsidian-installer/app.py "$@"\n'
+    )
+
+    return f"""\
+echo "==> Obsidian Installer (install .deb/.rpm/.flatpak by double-click) =="
+mkdir -p /opt/obsidian-installer/packaging/mime
+cat > /opt/obsidian-installer/app.py <<'EOF'
+{app_py}EOF
+cat > /opt/obsidian-installer/distro.py <<'EOF'
+{distro_py}EOF
+cat > /opt/obsidian-installer/installers.py <<'EOF'
+{installers_py}EOF
+cat > /opt/obsidian-installer/obsidian-installer-wrapper.sh <<'EOF'
+{wrapper_script}EOF
+chmod +x /opt/obsidian-installer/obsidian-installer-wrapper.sh
+cat > /opt/obsidian-installer/packaging/obsidian-installer.desktop <<'EOF'
+{desktop_file}EOF
+cat > /opt/obsidian-installer/packaging/mime/obsidian-installer-mime.xml <<'EOF'
+{mime_file}EOF
+cat > /opt/obsidian-installer/packaging/install-integration.sh <<'EOF'
+{integration_script}EOF
+chmod +x /opt/obsidian-installer/packaging/install-integration.sh
+
+{venv_pkg_install}
+python3 -m venv /opt/obsidian-installer/venv
+/opt/obsidian-installer/venv/bin/pip install --quiet --upgrade pip
+/opt/obsidian-installer/venv/bin/pip install --quiet PySide6
+
+sh /opt/obsidian-installer/packaging/install-integration.sh /opt/obsidian-installer/obsidian-installer-wrapper.sh
+"""
+
+
 def _section_wifi_mac_randomization(opts: GenOptions) -> str:
     if not opts.wifi_mac_randomization:
         return ""
@@ -821,6 +888,7 @@ def generate_script(opts: GenOptions) -> str:
         sections.append(firefox_policy)
     sections.append(_section_wallpaper(opts))
     sections.append(_section_guide_folder(opts))
+    sections.append(_section_obsidian_installer(opts, family))
     sections.append(_section_wifi_mac_randomization(opts))
     sections.append(_section_generic_hostname(opts))
     sections.append(_section_idle_lock(opts))

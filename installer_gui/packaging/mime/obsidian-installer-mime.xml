@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Defensive fallback only. On every system fleetctl actually targets, these
+  types are already registered by shared-mime-info itself (.deb/.rpm) or by
+  the flatpak package's own postinst (the two Flatpak types) — this file
+  just makes sure a minimal/stripped-down image still recognizes the four
+  extensions Obsidian Installer handles, even if one of those normal sources
+  is missing.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.debian.binary-package">
+    <comment>Debian package</comment>
+    <glob pattern="*.deb"/>
+  </mime-type>
+  <mime-type type="application/x-rpm">
+    <comment>RPM package</comment>
+    <glob pattern="*.rpm"/>
+  </mime-type>
+  <mime-type type="application/vnd.flatpak">
+    <comment>Flatpak application bundle</comment>
+    <glob pattern="*.flatpak"/>
+  </mime-type>
+  <mime-type type="application/vnd.flatpak.ref">
+    <comment>Flatpak reference</comment>
+    <glob pattern="*.flatpakref"/>
+  </mime-type>
+</mime-info>

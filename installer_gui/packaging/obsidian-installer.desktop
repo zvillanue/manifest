@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Obsidian Installer
+Comment=Install .deb, .rpm, and Flatpak files without the terminal
+Exec=/usr/local/bin/obsidian-installer %f
+Icon=obsidian-installer
+Terminal=false
+NoDisplay=false
+Categories=System;PackageManager;
+MimeType=application/vnd.debian.binary-package;application/x-rpm;application/x-redhat-package-manager;application/vnd.flatpak;application/vnd.flatpak.ref;

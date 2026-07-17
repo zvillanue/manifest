@@ -1,0 +1,4 @@
+# GUI-only dependency, deliberately isolated from the root requirements.txt
+# (which fleetctl's CLI/TUI load unconditionally). Nothing under
+# installer_gui/ is imported by fleetlib.py or ./fleetctl.
+PySide6>=6.5

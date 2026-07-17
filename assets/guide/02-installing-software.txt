@@ -23,7 +23,16 @@ You don't need to memorize these — "02 - Installing software.txt" will
 still be here. If you're not comfortable with the terminal, that's what the
 Software Center is for.
 
+Already downloaded a .deb, .rpm, or Flatpak file from an app's own website?
+Just double-click it — this computer's file manager opens those with
+Obsidian Installer, a simple "here's what this is, click Install" window, no
+terminal needed. Flatpak files always work. A .deb or .rpm file only
+installs if it matches this computer's system (Obsidian Installer will tell
+you plainly if it doesn't, rather than trying something unreliable) — check
+if the app has a Flatpak version instead in that case.
+
 One thing to avoid: instructions online that say to download and run a
 random .sh script from an unfamiliar website. Stick to your Software
-Center, Flatpak/Flathub, or {pkg_manager_name} — same rule of thumb as not
-installing random .exe files used to be on Windows.
+Center, Flatpak/Flathub, downloaded .deb/.rpm/Flatpak files, or
+{pkg_manager_name} — same rule of thumb as not installing random .exe files
+used to be on Windows.
