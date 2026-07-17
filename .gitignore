@@ -1,6 +1,7 @@
 # Runtime data — never commit real inventory/business data, especially to a public repo
 data/
 checklists/
+photos/
 postinstall/generated/
 
 # Local secrets — the encryption key must never end up in git (see README's

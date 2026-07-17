@@ -29,12 +29,14 @@ from fleetlib import (
     get_conn,
     init_db,
     op_add_part_replacement,
+    op_add_shipment_photo,
     op_create_unit,
     op_get_unit,
     op_handoff_card,
     op_import_hardware,
     op_list_builds,
     op_list_part_replacements,
+    op_list_shipment_photos,
     op_list_units,
     op_purge_secrets,
     op_register_build,
@@ -219,6 +221,22 @@ def cmd_part_list(args: argparse.Namespace) -> None:
             print(f"    notes: {r['notes']}")
 
 
+def cmd_photo_add(args: argparse.Namespace) -> None:
+    conn = require_db()
+    dest = op_add_shipment_photo(conn, args.serial, args.path, args.caption)
+    print(f"Saved shipment photo -> {dest}")
+
+
+def cmd_photo_list(args: argparse.Namespace) -> None:
+    conn = require_db()
+    rows = op_list_shipment_photos(conn, args.serial)
+    if not rows:
+        print(f"No shipment photos recorded for {args.serial}.")
+        return
+    for r in rows:
+        print(f"#{r['id']}  {r['file_path']}  ({r['uploaded_at']})" + (f"  {r['caption']}" if r["caption"] else ""))
+
+
 def cmd_show(args: argparse.Namespace) -> None:
     conn = require_db()
     unit = op_get_unit(conn, args.serial)
@@ -232,6 +250,11 @@ def cmd_show(args: argparse.Namespace) -> None:
     if parts:
         print("--- part replacements ---")
         for r in parts:
+            print(json.dumps(dict(r), indent=2))
+    photos = op_list_shipment_photos(conn, args.serial)
+    if photos:
+        print("--- shipment photos ---")
+        for r in photos:
             print(json.dumps(dict(r), indent=2))
 
 
@@ -369,6 +392,8 @@ def _tui_main(stdscr) -> None:
         ("Save completed checklist", _tui_checklist_save),
         ("Add part replacement", _tui_part_add),
         ("List part replacements", _tui_part_list),
+        ("Add shipment photo", _tui_photo_add),
+        ("List shipment photos", _tui_photo_list),
         ("Print handoff card", _tui_handoff_card),
         ("Purge temp secrets", _tui_purge_secrets),
         ("Manage builds", _tui_builds_menu),
@@ -583,6 +608,11 @@ def _tui_show_unit(stdscr, conn):
         lines += ["--- part replacements ---"]
         for r in parts:
             lines += json.dumps(dict(r), indent=2).splitlines()
+    photos = op_list_shipment_photos(conn, serial)
+    if photos:
+        lines += ["--- shipment photos ---"]
+        for r in photos:
+            lines += json.dumps(dict(r), indent=2).splitlines()
     _text_viewer(stdscr, f"Unit {serial}", lines)
 
 
@@ -696,6 +726,35 @@ def _tui_part_list(stdscr, conn):
             lines.append(f"  notes: {r['notes']}")
         lines.append("")
     _text_viewer(stdscr, f"Part replacements: {serial}", lines)
+
+
+def _tui_photo_add(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    path = _text_prompt(stdscr, "Path to photo file")
+    if not path:
+        return
+    caption = _text_prompt(stdscr, "Caption (optional, e.g. 'left hinge scuff')")
+    dest = op_add_shipment_photo(conn, serial, path, caption or None)
+    _message_screen(stdscr, f"Saved shipment photo -> {dest}")
+
+
+def _tui_photo_list(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    rows = op_list_shipment_photos(conn, serial)
+    if not rows:
+        _message_screen(stdscr, f"No shipment photos recorded for {serial}.")
+        return
+    lines = []
+    for r in rows:
+        lines.append(f"#{r['id']}  {r['file_path']}  ({r['uploaded_at']})")
+        if r["caption"]:
+            lines.append(f"  {r['caption']}")
+        lines.append("")
+    _text_viewer(stdscr, f"Shipment photos: {serial}", lines)
 
 
 def _tui_repurpose(stdscr, conn):
@@ -942,6 +1001,19 @@ def build_parser() -> argparse.ArgumentParser:
     pl = ptsub.add_parser("list", help="List part replacements for a unit")
     pl.add_argument("serial")
     pl.set_defaults(func=cmd_part_list)
+
+    ph = sub.add_parser("photo", help="Attach photos documenting a unit's condition as shipped")
+    phsub = ph.add_subparsers(dest="photo_command", required=True)
+
+    pha = phsub.add_parser("add", help="Attach a condition-shipped photo to a unit")
+    pha.add_argument("serial")
+    pha.add_argument("path")
+    pha.add_argument("--caption", default=None, help="e.g. 'left hinge scuff'")
+    pha.set_defaults(func=cmd_photo_add)
+
+    phl = phsub.add_parser("list", help="List shipment photos for a unit")
+    phl.add_argument("serial")
+    phl.set_defaults(func=cmd_photo_list)
 
     rp = sub.add_parser("repurpose", help="Retire a unit and spin up a new linked unit")
     rp.add_argument("serial")

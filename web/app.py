@@ -9,6 +9,7 @@ expose this port beyond localhost/your trusted LAN. See README.md.
 """
 
 import json
+import mimetypes
 import os
 import sys
 from datetime import date, timedelta
@@ -129,8 +130,9 @@ def unit_detail(serial):
     if unit["hardware_config_json"]:
         hw = json.dumps(json.loads(unit["hardware_config_json"]), indent=2)
     parts = fl.op_list_part_replacements(conn, serial)
+    photos = fl.op_list_shipment_photos(conn, serial)
     return render_template(
-        "unit_detail.html", unit=unit, hw=hw, statuses=fl.STATUS_FLOW, parts=parts
+        "unit_detail.html", unit=unit, hw=hw, statuses=fl.STATUS_FLOW, parts=parts, photos=photos
     )
 
 
@@ -267,6 +269,30 @@ def unit_checklist_save(serial):
     return redirect(url_for("unit_detail", serial=serial))
 
 
+@app.route("/units/<serial>/photos", methods=["POST"])
+def unit_photo_add(serial):
+    conn = fl.get_conn()
+    uploads = [f for f in request.files.getlist("photo_files") if f and f.filename]
+    if not uploads:
+        flash("Choose at least one photo to upload", "error")
+        return redirect(url_for("unit_detail", serial=serial))
+    caption = request.form.get("caption") or None
+    for upload in uploads:
+        suffix = Path(upload.filename).suffix or ".jpg"
+        fl.op_add_shipment_photo_bytes(conn, serial, suffix, upload.read(), caption)
+    flash(f"Saved {len(uploads)} shipment photo(s) for {serial}", "ok")
+    return redirect(url_for("unit_detail", serial=serial))
+
+
+@app.route("/units/<serial>/photos/<int:photo_id>")
+def unit_photo(serial, photo_id):
+    conn = fl.get_conn()
+    row = fl.op_get_shipment_photo(conn, serial, photo_id)
+    path = fl.ROOT / row["file_path"]
+    mimetype = mimetypes.guess_type(row["file_path"])[0] or "application/octet-stream"
+    return Response(path.read_bytes(), mimetype=mimetype)
+
+
 @app.route("/units/<serial>/handoff-card")
 def unit_handoff_card(serial):
     conn = fl.get_conn()
@@ -346,6 +372,7 @@ def script_generate():
             generic_hostname=checkbox("generic_hostname"),
             idle_lock_timeout=checkbox("idle_lock_timeout"),
             firefox_privacy_hardening=checkbox("firefox_privacy_hardening"),
+            obsidian_installer=checkbox("obsidian_installer"),
         )
         script = generate_script(opts)
 

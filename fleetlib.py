@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "fleetctl.db"
 WORDLIST_PATH = ROOT / "wordlist" / "eff_large_wordlist.txt"
 CHECKLISTS_DIR = ROOT / "checklists"
+PHOTOS_DIR = ROOT / "photos"
 POSTINSTALL_DIR = ROOT / "postinstall"
 
 DB_KEY_ENV = "FLEETCTL_DB_KEY"
@@ -207,6 +208,14 @@ CREATE TABLE IF NOT EXISTS part_replacements (
     new_date_of_mfg TEXT,
     notes TEXT,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shipment_photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit_serial TEXT NOT NULL REFERENCES units(serial),
+    file_path TEXT NOT NULL,
+    caption TEXT,
+    uploaded_at TEXT NOT NULL
 );
 """
 
@@ -439,6 +448,52 @@ def op_list_part_replacements(conn: sqlite3.Connection, serial: str) -> list[sql
         "SELECT * FROM part_replacements WHERE unit_serial = ? ORDER BY replaced_at DESC, id DESC",
         (serial,),
     ).fetchall()
+
+
+def op_add_shipment_photo_bytes(conn: sqlite3.Connection, serial: str, suffix: str, data: bytes,
+                                 caption: str | None = None) -> Path:
+    op_get_unit(conn, serial)
+    unit_dir = PHOTOS_DIR / serial
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    # Timestamp + a few random hex chars keeps filenames unique even when
+    # several photos are uploaded in the same batch (same second).
+    stamp = now.strftime("%Y%m%dT%H%M%S") + secrets.token_hex(3)
+    dest = unit_dir / f"{stamp}{suffix or ''}"
+    dest.write_bytes(data)
+    rel_path = dest.relative_to(ROOT)
+    conn.execute(
+        """INSERT INTO shipment_photos (unit_serial, file_path, caption, uploaded_at)
+           VALUES (?, ?, ?, ?)""",
+        (serial, str(rel_path), caption, now.isoformat(timespec="seconds")),
+    )
+    conn.commit()
+    return rel_path
+
+
+def op_add_shipment_photo(conn: sqlite3.Connection, serial: str, path: str,
+                           caption: str | None = None) -> Path:
+    src = Path(path)
+    if not src.exists():
+        raise FleetError(f"File not found: {src}")
+    return op_add_shipment_photo_bytes(conn, serial, src.suffix, src.read_bytes(), caption)
+
+
+def op_list_shipment_photos(conn: sqlite3.Connection, serial: str) -> list[sqlite3.Row]:
+    op_get_unit(conn, serial)
+    return conn.execute(
+        "SELECT * FROM shipment_photos WHERE unit_serial = ? ORDER BY uploaded_at DESC, id DESC",
+        (serial,),
+    ).fetchall()
+
+
+def op_get_shipment_photo(conn: sqlite3.Connection, serial: str, photo_id: int) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT * FROM shipment_photos WHERE unit_serial = ? AND id = ?", (serial, photo_id),
+    ).fetchone()
+    if not row:
+        raise FleetError(f"No such photo #{photo_id} for {serial}")
+    return row
 
 
 PART_TYPE_SUGGESTIONS = [

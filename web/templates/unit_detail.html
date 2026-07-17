@@ -57,6 +57,22 @@
 {% endif %}
 <p><a href="{{ url_for('unit_part_new', serial=unit['serial']) }}">+ Record a part replacement</a></p>
 
+<h2>Shipment photos</h2>
+<p>Condition documentation taken at time of shipping — useful evidence if a
+buyer later disputes the condition a unit was sent in.</p>
+{% if photos %}
+<div class="photo-grid">
+  {% for p in photos %}
+    <a href="{{ url_for('unit_photo', serial=unit['serial'], photo_id=p['id']) }}" target="_blank" class="photo-item">
+      <img src="{{ url_for('unit_photo', serial=unit['serial'], photo_id=p['id']) }}" alt="Shipment photo #{{ p['id'] }}">
+      <span>{{ p['uploaded_at'] }}{% if p['caption'] %} — {{ p['caption'] }}{% endif %}</span>
+    </a>
+  {% endfor %}
+</div>
+{% else %}
+<p>No shipment photos recorded.</p>
+{% endif %}
+
 <h2>QR label</h2>
 <p>Encodes a random token meaningless to anyone without access to this
 database — not the serial, not hardware info. Look it up under "QR lookup".</p>
@@ -102,6 +118,12 @@ database — not the serial, not hardware info. Look it up under "QR lookup".</p
   <form method="post" action="{{ url_for('unit_checklist_save', serial=unit['serial']) }}" enctype="multipart/form-data">
     <label>Completed checklist file <input type="file" name="checklist_file" required></label>
     <button type="submit">Save checklist</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_photo_add', serial=unit['serial']) }}" enctype="multipart/form-data">
+    <label>Condition-shipped photo(s) <input type="file" name="photo_files" accept="image/*" multiple required></label>
+    <label>Caption <input type="text" name="caption" placeholder="e.g. as shipped, front/back/screen"></label>
+    <button type="submit">Save photo(s)</button>
   </form>
 
   <form method="post" action="{{ url_for('unit_purge_secrets', serial=unit['serial']) }}"

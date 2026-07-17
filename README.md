@@ -630,6 +630,28 @@ full part replacement history inline. The web GUI shows it as its own table
 on the unit detail page, with a "+ Record a part replacement" link to a
 dedicated form (old part / new part side by side).
 
+## Shipment photos
+
+Photo documentation of a unit's condition at time of shipping — evidence to
+point to if a buyer later disputes what condition they received it in.
+Lives in its own table (`shipment_photos`), one row per photo, same
+append-only philosophy as part replacements above: a unit can have any
+number of them, and there's no delete/edit once uploaded.
+
+```sh
+./fleetctl photo add LT1-260713-D05-5 ~/Pictures/lt1-front.jpg --caption "front, as shipped"
+./fleetctl photo list LT1-260713-D05-5
+```
+
+Files are copied into `photos/<serial>/` (gitignored, same as `checklists/`
+and `data/` — never committed, since these are real customer/inventory
+photos). `fleetctl show <serial>` and the TUI's "Show unit details" list
+photo records inline (path + caption, not the image itself — this is a
+terminal). The web GUI is the more useful place to actually look at them:
+the unit detail page shows a thumbnail gallery and a "+ Save photo(s)"
+form that accepts multiple files at once plus one shared caption for the
+batch.
+
 ## Repurposing
 
 `fleetctl repurpose <serial>` marks the original unit `Repurposed` and
@@ -673,6 +695,8 @@ web/static/brand/       logo/favicon SVGs+PNG copied from ../../05 Brand/Logo/
 Dockerfile              image for web/app.py only — the CLI/TUI need no container
 docker-compose.yml      runs the web GUI on port 4299, bind-mounts this directory
 data/fleetctl.db        SQLite database (created automatically on first run)
+checklists/              completed per-unit checklists saved via `checklist-save` (gitignored)
+photos/<serial>/        shipment condition photos saved via `photo add` (gitignored)
 wordlist/               EFF large wordlist for passphrase generation
 scripts/                hardware-inventory.sh
 postinstall/            one script/doc per build id (tier 1/2/3 laptop, GrapheneOS)
