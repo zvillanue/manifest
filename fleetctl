@@ -335,6 +335,7 @@ def _opts_from_args(args: argparse.Namespace) -> GenOptions:
         idle_lock_timeout=not args.no_idle_lock,
         firefox_privacy_hardening=not args.no_firefox_privacy,
         obsidian_installer=not args.no_obsidian_installer,
+        obsidian_doctor=not args.no_obsidian_doctor,
     )
 
 
@@ -1084,6 +1085,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="don't enable Firefox HTTPS-Only mode / disable telemetry+Pocket+studies")
     sg.add_argument("--no-obsidian-installer", action="store_true",
                      help="don't install the double-click .deb/.rpm/.flatpak installer GUI")
+    sg.add_argument("--no-obsidian-doctor", action="store_true",
+                     help="don't install the one-click package-manager repair GUI")
     sg.add_argument("-o", "--output", default=None, help="write to this path instead of stdout")
     sg.add_argument("--register-build", default=None, metavar="BUILD_ID",
                      help="save under postinstall/generated/<id>.sh and register it as a build")

@@ -619,6 +619,73 @@ standalone build both call it unchanged, just pointing at different binaries
 (a thin venv-wrapper shell script vs. the PyInstaller output), so there's no
 duplicated registration logic to keep in sync.
 
+## Obsidian Doctor (one-click package-manager repairs)
+
+`doctor_gui/` is a second small PySide6 GUI, same isolation reasoning as
+Obsidian Installer above (`requirements.txt` only pulls in PySide6, nothing
+here touches `fleetlib.py`/`fleetctl`/`web/`). It exists for the buyer whose
+package manager is stuck rather than missing an app — apt/dpkg or pacman
+refusing to run after an interrupted update, a corrupted local package
+database, stale repository metadata — the kind of thing that's normally a
+terminal-and-a-search-engine problem, not a GUI one.
+
+The window has two tabs:
+
+**Repairs** — one card per fix, grouped by whatever's actually relevant to
+this machine (`distro.py`'s `detect_family()` picks apt/dnf/pacman; Flatpak's
+own section shows up independently if it's installed at all). Each card
+states in plain English what the problem looks like and what the fix does,
+before anything runs — clicking **Fix it** shows that same text plus a
+confirmation prompt, then runs the commands via the same `RunDialog`
+(QProcess + `pkexec`) pattern as Obsidian Installer, with a live log.
+
+Current repairs, defined in `repairs.py` (stdlib-only, no Qt — same split as
+`installers.py`):
+
+- **apt**: release a stuck dpkg/apt lock, finish an interrupted
+  install (`dpkg --configure -a` + `apt-get install -f`), refresh repository
+  metadata, clean the download cache.
+- **dnf**: rebuild the local package database (`rpm --rebuilddb`), refresh
+  repository metadata, clean the download cache.
+- **pacman**: release a stuck db lock, reset the package-signature keyring
+  (`pacman-key --init/--populate`), force-refresh the sync databases, clean
+  the download cache.
+- **Flatpak**: `flatpak repair`, remove unused runtimes, and — only if the
+  Flathub remote is missing — re-add it.
+
+Every command is a fixed argv template (`Repair.steps: list[list[str]]`,
+run in order by `RunDialog`, stopping at the first failed step) — nothing
+here is ever built by string concatenation or run through a shell, since
+there's no free-text/file-path input to interpolate in the first place
+(unlike Obsidian Installer, which does handle a user-picked file path).
+
+The two **lock-release** repairs (apt, pacman) have one extra safety check
+neither of Obsidian Installer's actions needed: `repairs.process_running()`
+scans `/proc` first and refuses to touch the lock file if the package
+manager genuinely looks like it's still running, rather than assuming a
+lock file always means a stale one.
+
+**Help** — plain-English scope: what Doctor does and doesn't touch (package
+manager internals only, never personal files or individual apps), and a
+pointer back to "whoever you bought this laptop from" if a repair doesn't
+fix it.
+
+Verified end-to-end with a real (offscreen) Qt session before considering
+this done — rendered both tabs, ran `RunDialog` through a real multi-step
+QProcess sequence (including a deliberately-failing step, to confirm it
+stops at that step and reports which one rather than continuing), and
+confirmed the `/proc` precheck doesn't false-positive on this dev machine.
+Also verified the CLI flag, the default-on embedding (`bash -n` on the
+generated script), the opt-out flag, and the web GUI's checkbox all
+actually thread through to `generate_script()` correctly.
+
+Packaging mirrors Obsidian Installer's two delivery paths
+(`doctor_gui/packaging/build_standalone.sh`, same oldest-glibc build caveat;
+`install-integration.sh`, simpler here since Doctor has no file-type MIME
+association — it's just a menu entry). Wired into `scriptgen.py` the same
+way as Obsidian Installer: an OEM branding checkbox (web), a
+`--no-obsidian-doctor` flag (CLI), both defaulting to on.
+
 ## Builds vs. units
 
 Two separate concepts, matching the checklists' "one defined image per

@@ -373,6 +373,7 @@ def script_generate():
             idle_lock_timeout=checkbox("idle_lock_timeout"),
             firefox_privacy_hardening=checkbox("firefox_privacy_hardening"),
             obsidian_installer=checkbox("obsidian_installer"),
+            obsidian_doctor=checkbox("obsidian_doctor"),
         )
         script = generate_script(opts)
 

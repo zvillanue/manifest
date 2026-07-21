@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Obsidian Doctor
+Comment=Fix common package-manager problems without the terminal
+Exec=/usr/local/bin/obsidian-doctor
+Icon=obsidian-doctor
+Terminal=false
+NoDisplay=false
+Categories=System;

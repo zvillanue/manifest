@@ -38,6 +38,7 @@ from app_catalog import APPS
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 INSTALLER_GUI_DIR = Path(__file__).resolve().parent / "installer_gui"
+DOCTOR_GUI_DIR = Path(__file__).resolve().parent / "doctor_gui"
 
 FAMILIES = ("apt", "dnf", "pacman")
 
@@ -124,6 +125,7 @@ class GenOptions:
     idle_lock_timeout: bool = True
     firefox_privacy_hardening: bool = True
     obsidian_installer: bool = True
+    obsidian_doctor: bool = True
 
 
 def _resolve_app_install(app_id: str, os_id: str, family: str):
@@ -711,6 +713,60 @@ sh /opt/obsidian-installer/packaging/install-integration.sh /opt/obsidian-instal
 """
 
 
+def _section_obsidian_doctor(opts: GenOptions, family: str) -> str:
+    """Ships doctor_gui/ (the one-click package-manager repair GUI) the same
+    way _section_obsidian_installer() ships installer_gui/ — plain Python
+    through a dedicated venv on the target's own interpreter, not the
+    prebuilt PyInstaller binary (website-download path only, same
+    glibc-portability reasoning as the installer)."""
+    if not opts.obsidian_doctor:
+        return ""
+
+    gui_dir = DOCTOR_GUI_DIR
+    app_py = (gui_dir / "app.py").read_text()
+    distro_py = (gui_dir / "distro.py").read_text()
+    repairs_py = (gui_dir / "repairs.py").read_text()
+    desktop_file = (gui_dir / "packaging" / "obsidian-doctor.desktop").read_text()
+    integration_script = (gui_dir / "packaging" / "install-integration.sh").read_text()
+
+    venv_pkg_install = {
+        "apt": "apt-get install -y python3-venv python3-pip",
+        "dnf": "dnf install -y python3-pip",
+        "pacman": "pacman -S --noconfirm --needed python-pip",
+    }[family]
+
+    wrapper_script = (
+        "#!/bin/sh\n"
+        'exec /opt/obsidian-doctor/venv/bin/python /opt/obsidian-doctor/app.py "$@"\n'
+    )
+
+    return f"""\
+echo "==> Obsidian Doctor (one-click package-manager repairs) =="
+mkdir -p /opt/obsidian-doctor/packaging
+cat > /opt/obsidian-doctor/app.py <<'EOF'
+{app_py}EOF
+cat > /opt/obsidian-doctor/distro.py <<'EOF'
+{distro_py}EOF
+cat > /opt/obsidian-doctor/repairs.py <<'EOF'
+{repairs_py}EOF
+cat > /opt/obsidian-doctor/obsidian-doctor-wrapper.sh <<'EOF'
+{wrapper_script}EOF
+chmod +x /opt/obsidian-doctor/obsidian-doctor-wrapper.sh
+cat > /opt/obsidian-doctor/packaging/obsidian-doctor.desktop <<'EOF'
+{desktop_file}EOF
+cat > /opt/obsidian-doctor/packaging/install-integration.sh <<'EOF'
+{integration_script}EOF
+chmod +x /opt/obsidian-doctor/packaging/install-integration.sh
+
+{venv_pkg_install}
+python3 -m venv /opt/obsidian-doctor/venv
+/opt/obsidian-doctor/venv/bin/pip install --quiet --upgrade pip
+/opt/obsidian-doctor/venv/bin/pip install --quiet PySide6
+
+sh /opt/obsidian-doctor/packaging/install-integration.sh /opt/obsidian-doctor/obsidian-doctor-wrapper.sh
+"""
+
+
 def _section_wifi_mac_randomization(opts: GenOptions) -> str:
     if not opts.wifi_mac_randomization:
         return ""
@@ -892,6 +948,7 @@ def generate_script(opts: GenOptions) -> str:
     sections.append(_section_wallpaper(opts))
     sections.append(_section_guide_folder(opts))
     sections.append(_section_obsidian_installer(opts, family))
+    sections.append(_section_obsidian_doctor(opts, family))
     sections.append(_section_wifi_mac_randomization(opts))
     sections.append(_section_generic_hostname(opts))
     sections.append(_section_idle_lock(opts))
