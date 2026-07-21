@@ -338,10 +338,15 @@ def op_list_builds(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM builds ORDER BY build_id").fetchall()
 
 
-def op_verify_build(conn: sqlite3.Connection, build_id: str) -> tuple[bool, str, str]:
+def op_get_build(conn: sqlite3.Connection, build_id: str) -> sqlite3.Row:
     row = conn.execute("SELECT * FROM builds WHERE build_id = ?", (build_id,)).fetchone()
     if not row:
         raise FleetError(f"No such build: {build_id}")
+    return row
+
+
+def op_verify_build(conn: sqlite3.Connection, build_id: str) -> tuple[bool, str, str]:
+    row = op_get_build(conn, build_id)
     script_path = ROOT / row["postinstall_script_path"]
     if not script_path.exists():
         raise FleetError(f"Registered script missing on disk: {script_path}")

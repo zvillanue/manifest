@@ -696,7 +696,12 @@ tier" discipline:
   registration time. `fleetctl build verify <id>` tells you if the
   registered script has since been edited — useful if you tweak a script
   and want to know whether existing build ids are still accurate, or if you
-  should bump the version suffix and register a new build id instead.
+  should bump the version suffix and register a new build id instead. The
+  web GUI's **Builds** page has a **download** link per build (`/builds/<id>/download`)
+  that serves the exact registered script file as a plain-text attachment
+  — for copying onto a USB stick to run on a machine with no network access,
+  since the CLI/TUI already have direct filesystem access to
+  `postinstall/generated/` and don't need this.
 - **`units`**: one row per physical device — serial, which build it used,
   OEM make/model, hardware config, dates, status, warranty/repurpose
   flags, checklist copy, temp credentials.

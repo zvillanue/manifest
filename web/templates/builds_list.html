@@ -13,7 +13,11 @@
       <td>{{ b['postinstall_script_path'] }}</td>
       <td>{{ b['script_sha256'][:12] }}...</td>
       <td>{{ b['description'] or '' }}</td>
-      <td><a href="{{ url_for('build_verify', build_id=b['build_id']) }}">verify</a></td>
+      <td>
+        <a href="{{ url_for('build_download', build_id=b['build_id']) }}">download</a>
+        &middot;
+        <a href="{{ url_for('build_verify', build_id=b['build_id']) }}">verify</a>
+      </td>
     </tr>
   {% else %}
     <tr><td colspan="6">No builds registered yet.</td></tr>

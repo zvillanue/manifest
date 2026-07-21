@@ -331,6 +331,23 @@ def build_new():
     return render_template("build_new.html", files=files)
 
 
+@app.route("/builds/<build_id>/download")
+def build_download(build_id):
+    """Serves the registered post-install script as a plain-text download —
+    so it can be copied onto a USB stick and run on a machine with no
+    network access, same file `fleetctl build verify` checks against."""
+    conn = fl.get_conn()
+    row = fl.op_get_build(conn, build_id)
+    script_path = fl.ROOT / row["postinstall_script_path"]
+    if not script_path.exists():
+        raise fl.FleetError(f"Registered script missing on disk: {script_path}")
+    return Response(
+        script_path.read_bytes(),
+        mimetype="text/x-sh",
+        headers={"Content-Disposition": f'attachment; filename="{build_id}.sh"'},
+    )
+
+
 @app.route("/builds/<build_id>/verify")
 def build_verify(build_id):
     conn = fl.get_conn()
