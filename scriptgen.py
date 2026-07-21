@@ -664,6 +664,7 @@ def _section_obsidian_installer(opts: GenOptions, family: str) -> str:
     app_py = (gui_dir / "app.py").read_text()
     distro_py = (gui_dir / "distro.py").read_text()
     installers_py = (gui_dir / "installers.py").read_text()
+    history_py = (gui_dir / "history.py").read_text()
     desktop_file = (gui_dir / "packaging" / "obsidian-installer.desktop").read_text()
     mime_file = (gui_dir / "packaging" / "mime" / "obsidian-installer-mime.xml").read_text()
     integration_script = (gui_dir / "packaging" / "install-integration.sh").read_text()
@@ -688,6 +689,8 @@ cat > /opt/obsidian-installer/distro.py <<'EOF'
 {distro_py}EOF
 cat > /opt/obsidian-installer/installers.py <<'EOF'
 {installers_py}EOF
+cat > /opt/obsidian-installer/history.py <<'EOF'
+{history_py}EOF
 cat > /opt/obsidian-installer/obsidian-installer-wrapper.sh <<'EOF'
 {wrapper_script}EOF
 chmod +x /opt/obsidian-installer/obsidian-installer-wrapper.sh

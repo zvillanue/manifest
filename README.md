@@ -535,9 +535,12 @@ app's own website has no GUI way to install it without opening a terminal —
 `assets/guide/02-installing-software.txt` covers the Software Center and
 Flatpak/Flathub cases, but not "I already have the file."
 
-Double-clicking a package file in the file manager launches
-`obsidian-installer <path>`, which shows what the file is, whether this
-machine can actually install it, and an Install button:
+The window has three tabs:
+
+**Install** — double-clicking a package file in the file manager launches
+`obsidian-installer <path>`, which opens straight to this tab showing what
+the file is, whether this machine can actually install it, and an Install
+button:
 
 - **Flatpak** (`.flatpak`/`.flatpakref`) always works, since fleetctl's own
   post-install script sets up Flatpak + the Flathub remote unconditionally on
@@ -554,11 +557,46 @@ machine can actually install it, and an Install button:
   way to convert those formats, and a half-working converted package is worse
   than a clear "this won't work here" message.
 
+A successful install records the real package name and version — read from
+the file itself via `dpkg-deb -f`/`rpm -qp`, not guessed from the filename —
+into a local JSON history (`history.py`, `~/.local/share/obsidian-installer/history.json`).
+Flatpak installs are **not** recorded there; see the next tab for why.
+
+**Installed Apps** — lists what can be safely removed, in two groups:
+
+- *Flatpak apps*: every Flatpak currently on the system, queried live via
+  `flatpak list`, regardless of whether it was installed through this tool,
+  the Software Center, or the command line. Flatpak apps are sandboxed and
+  self-contained, so listing and removing any of them is safe no matter how
+  they got there — there's no need for `history.py` to track Flatpak
+  installs at all, since `flatpak list` is already the authoritative record.
+- *Installed by Obsidian Installer*: `.deb`/`.rpm` packages from the local
+  history log above, **and only those** — deliberately **not** a general
+  apt/dnf package browser. Removing an arbitrary system package (e.g. a
+  library something else depends on) can break the OS, which this tool
+  should never expose to a non-technical buyer. Every entry is cross-checked
+  against `dpkg-query`/`rpm -q` on refresh, and silently dropped from the
+  history if it's no longer actually installed (e.g. removed via the
+  terminal) — so the list never shows a Remove button for something that
+  isn't really there.
+
+Removal reuses the same `RunDialog` (QProcess + pkexec where needed) as
+installing, just with `apt-get remove`/`dnf remove`/`flatpak uninstall`
+instead.
+
+**Help** — plain-English guidance on where to find packages safely (Software
+Center/Flathub first, official vendor sites over third-party mirrors, check
+the architecture matches, never run a random `.sh` installer script — same
+rule of thumb as the guide folder's own advice), why `.deb`/`.rpm` are
+distro-specific, and what the Installed Apps tab will and won't let you
+remove. Includes a **Search Flathub** button (`QDesktopServices.openUrl`) as
+the fastest safe path to an app.
+
 Two independent ways this reaches a machine:
 
 1. **Pre-installed on units you build** — the post-install script generator
-   embeds `installer_gui/{app,distro,installers}.py` directly into the
-   generated script (same base64-into-heredoc pattern as the wallpaper
+   embeds `installer_gui/{app,distro,installers,history}.py` directly into
+   the generated script (same base64-into-heredoc pattern as the wallpaper
    image), and has it installed with a dedicated venv + `pip install PySide6`
    **on the target machine itself** at image time — not the prebuilt
    PyInstaller binary below. That sidesteps PyInstaller's Linux

@@ -31,6 +31,9 @@ installs if it matches this computer's system (Obsidian Installer will tell
 you plainly if it doesn't, rather than trying something unreliable) — check
 if the app has a Flatpak version instead in that case.
 
+Obsidian Installer also has an "Installed Apps" tab for removing something
+later, and a "Help" tab with more on where to safely find packages.
+
 One thing to avoid: instructions online that say to download and run a
 random .sh script from an unfamiliar website. Stick to your Software
 Center, Flatpak/Flathub, downloaded .deb/.rpm/Flatpak files, or
