@@ -16,6 +16,8 @@
       <td>
         <a href="{{ url_for('build_download', build_id=b['build_id']) }}">download</a>
         &middot;
+        <a href="{{ url_for('build_download_bundle', build_id=b['build_id']) }}">bundle (.tar.gz)</a>
+        &middot;
         <a href="{{ url_for('build_verify', build_id=b['build_id']) }}">verify</a>
       </td>
     </tr>

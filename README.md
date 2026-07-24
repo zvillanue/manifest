@@ -334,8 +334,9 @@ than failing the whole script, so it still produces partial output without
 root or on a minimal live-USB environment.
 
 `fleetctl hardware-import <serial> unit.json` attaches that JSON to the
-unit's record, and backfills `oem_make`/`oem_model` from the dmidecode
-system fields if you didn't already set them in `fleetctl new`.
+unit's record, and backfills `oem_make`/`oem_model`/`oem_serial_number`
+from the dmidecode system fields if you didn't already set them in
+`fleetctl new` or `fleetctl oem`.
 
 ## Post-install script generator
 
@@ -703,8 +704,40 @@ tier" discipline:
   since the CLI/TUI already have direct filesystem access to
   `postinstall/generated/` and don't need this.
 - **`units`**: one row per physical device — serial, which build it used,
-  OEM make/model, hardware config, dates, status, warranty/repurpose
-  flags, checklist copy, temp credentials.
+  OEM make/model/serial number, hardware config, dates, status,
+  warranty/repurpose flags, checklist copy, temp credentials.
+
+## OEM make, model, and serial number
+
+Three fields on the `units` row (`oem_make`, `oem_model`,
+`oem_serial_number`) — distinct from fleetctl's own generated `serial`
+(the one on the QR label and in every command below). This is the
+manufacturer's own identity for the device: make/model for display (unit
+lists, handoff card), serial number for warranty lookups and matching
+against manufacturer records.
+
+Set make/model at creation time; the OEM serial number is usually easier
+to grab once the case is open during refurb, so it's a separate flag:
+
+```sh
+./fleetctl new --line laptop --tier 1 --make Lenovo --model "ThinkPad T480" \
+    --oem-serial PF3ABCDE
+```
+
+or set/correct any of the three later — unlike acquisition info below,
+`fleetctl oem` only overwrites fields you actually pass, so setting just
+the serial number doesn't blank out make/model:
+
+```sh
+./fleetctl oem <serial> --serial-number PF3ABCDE
+```
+
+Same behavior in the TUI ("Set OEM info") and web GUI (on the "New unit"
+form, and as an action card on the unit detail page).
+
+`fleetctl hardware-import` also backfills `oem_serial_number` from
+dmidecode's `system-serial-number`, same as it does for make/model — see
+"Hardware config script" below.
 
 ## Acquisition info
 

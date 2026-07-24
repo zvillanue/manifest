@@ -44,6 +44,7 @@ from fleetlib import (
     op_save_checklist,
     op_sell,
     op_set_acquisition,
+    op_set_oem_info,
     op_set_status,
     op_verify_build,
     op_warranty,
@@ -115,6 +116,7 @@ def _print_new_unit(result: dict) -> None:
     print(f"Created unit {result['serial']}")
     print(f"  line/tier:  {result['line']} / tier {result['tier'] or '-'}")
     print(f"  make/model: {result['make'] or '-'} {result['model'] or '-'}")
+    print(f"  OEM serial: {result['oem_serial_number'] or '-'}")
     print(f"  build:      {result['build'] or '-'}")
     print(f"  mfg date:   {result['mfg_date']}")
     print("  --- handoff card (temporary — buyer must change all three) ---")
@@ -129,7 +131,8 @@ def cmd_new(args: argparse.Namespace) -> None:
                              args.build, args.mfg_date, args.words,
                              acquisition_date_str=args.acquisition_date,
                              acquisition_source=args.acquisition_source,
-                             acquisition_cost=args.acquisition_cost)
+                             acquisition_cost=args.acquisition_cost,
+                             oem_serial_number=args.oem_serial)
     _print_new_unit(result)
 
 
@@ -137,7 +140,7 @@ def cmd_hardware_import(args: argparse.Namespace) -> None:
     conn = require_db()
     backfilled = op_import_hardware(conn, args.serial, args.json_file)
     print(f"Imported hardware config for {args.serial}"
-          + (" (backfilled make/model from dmidecode)" if backfilled else ""))
+          + (" (backfilled OEM info from dmidecode)" if backfilled else ""))
 
 
 def cmd_checklist_save(args: argparse.Namespace) -> None:
@@ -186,6 +189,15 @@ def cmd_acquisition(args: argparse.Namespace) -> None:
     print(f"{args.serial} acquisition: {acq_date}"
           + (f", source={args.source}" if args.source else "")
           + (f", cost={args.cost}" if args.cost else ""))
+
+
+def cmd_oem(args: argparse.Namespace) -> None:
+    conn = require_db()
+    op_set_oem_info(conn, args.serial, args.make, args.model, args.serial_number)
+    print(f"{args.serial} OEM info updated"
+          + (f", make={args.make}" if args.make else "")
+          + (f", model={args.model}" if args.model else "")
+          + (f", serial_number={args.serial_number}" if args.serial_number else ""))
 
 
 def cmd_part_add(args: argparse.Namespace) -> None:
@@ -389,6 +401,7 @@ def _tui_main(stdscr) -> None:
         ("Mark sold", _tui_sell),
         ("Warranty claim", _tui_warranty),
         ("Set acquisition info", _tui_acquisition),
+        ("Set OEM info", _tui_oem),
         ("Repurpose unit", _tui_repurpose),
         ("Import hardware config", _tui_hardware_import),
         ("Save completed checklist", _tui_checklist_save),
@@ -550,17 +563,19 @@ def _tui_new_unit(stdscr, conn):
     tier = _pick_tier(stdscr, "Tier")
     make = _text_prompt(stdscr, "OEM make (e.g. Lenovo, blank to skip)")
     model = _text_prompt(stdscr, "OEM model (e.g. ThinkPad T480, blank to skip)")
+    oem_serial = _text_prompt(stdscr, "OEM serial number (off the case sticker, blank to skip)")
     build = _pick_build(stdscr, conn, line=line_choice)
     mfg_date = _text_prompt(stdscr, "Manufacture date YYYY-MM-DD (blank = today)")
     words_str = _text_prompt(stdscr, "Words per passphrase", default="6")
     words = int(words_str) if words_str else 6
 
     result = op_create_unit(conn, line_choice, tier, make or None, model or None,
-                             build, mfg_date or None, words)
+                             build, mfg_date or None, words, oem_serial_number=oem_serial or None)
     lines = [
         f"Created unit {result['serial']}",
         f"line/tier:  {result['line']} / tier {result['tier'] or '-'}",
         f"make/model: {result['make'] or '-'} {result['model'] or '-'}",
+        f"OEM serial: {result['oem_serial_number'] or '-'}",
         f"build:      {result['build'] or '-'}",
         f"mfg date:   {result['mfg_date']}",
         "",
@@ -662,6 +677,19 @@ def _tui_acquisition(stdscr, conn):
     result_date = op_set_acquisition(conn, serial, acq_date or None, source or None, cost or None)
     _message_screen(stdscr, f"{serial} acquisition: {result_date}"
                     + (f", source={source}" if source else "") + (f", cost={cost}" if cost else ""))
+
+
+def _tui_oem(stdscr, conn):
+    serial = _pick_unit(stdscr, conn)
+    if not serial:
+        return
+    unit = op_get_unit(conn, serial)
+    make = _text_prompt(stdscr, "OEM make (blank to leave unchanged)", default=unit["oem_make"] or "")
+    model = _text_prompt(stdscr, "OEM model (blank to leave unchanged)", default=unit["oem_model"] or "")
+    oem_serial = _text_prompt(stdscr, "OEM serial number (blank to leave unchanged)",
+                               default=unit["oem_serial_number"] or "")
+    op_set_oem_info(conn, serial, make or None, model or None, oem_serial or None)
+    _message_screen(stdscr, f"{serial} OEM info: {make or '-'} {model or '-'} (S/N {oem_serial or '-'})")
 
 
 def _tui_part_add(stdscr, conn):
@@ -794,7 +822,7 @@ def _tui_hardware_import(stdscr, conn):
         return
     backfilled = op_import_hardware(conn, serial, json_file)
     _message_screen(stdscr, f"Imported hardware config for {serial}"
-                    + (" (backfilled make/model from dmidecode)" if backfilled else ""))
+                    + (" (backfilled OEM info from dmidecode)" if backfilled else ""))
 
 
 def _tui_checklist_save(stdscr, conn):
@@ -936,6 +964,7 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--tier", type=int, default=None)
     n.add_argument("--make", default=None, help="OEM make, e.g. Lenovo")
     n.add_argument("--model", default=None, help="OEM model, e.g. ThinkPad T480")
+    n.add_argument("--oem-serial", default=None, help="OEM's own serial number, off the case sticker")
     n.add_argument("--build", default=None, help="build id (see `fleetctl build list`)")
     n.add_argument("--mfg-date", default=None, help="YYYY-MM-DD, defaults to today")
     n.add_argument("--words", type=int, default=6, help="words per passphrase (default 6)")
@@ -978,6 +1007,13 @@ def build_parser() -> argparse.ArgumentParser:
     ac.add_argument("--source", default=None, help="e.g. eBay, Craigslist, Facebook Marketplace")
     ac.add_argument("--cost", default=None, help="what you paid, e.g. 110")
     ac.set_defaults(func=cmd_acquisition)
+
+    oe = sub.add_parser("oem", help="Set/update a unit's OEM make, model, and/or serial number")
+    oe.add_argument("serial")
+    oe.add_argument("--make", default=None, help="OEM make, e.g. Lenovo")
+    oe.add_argument("--model", default=None, help="OEM model, e.g. ThinkPad T480")
+    oe.add_argument("--serial-number", default=None, help="OEM's own serial number, off the case sticker")
+    oe.set_defaults(func=cmd_oem)
 
     pt = sub.add_parser("part", help="Record parts swapped during refurb (old part + new part per record)")
     ptsub = pt.add_subparsers(dest="part_command", required=True)

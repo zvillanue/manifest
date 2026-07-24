@@ -116,6 +116,7 @@ def unit_new():
             acquisition_date_str=request.form.get("acquisition_date") or None,
             acquisition_source=request.form.get("acquisition_source") or None,
             acquisition_cost=request.form.get("acquisition_cost") or None,
+            oem_serial_number=request.form.get("oem_serial") or None,
         )
         return render_template("unit_created.html", result=result)
     builds = fl.op_list_builds(conn)
@@ -199,6 +200,17 @@ def unit_acquisition(serial):
     return redirect(url_for("unit_detail", serial=serial))
 
 
+@app.route("/units/<serial>/oem", methods=["POST"])
+def unit_oem(serial):
+    conn = fl.get_conn()
+    fl.op_set_oem_info(
+        conn, serial, request.form.get("make") or None,
+        request.form.get("model") or None, request.form.get("oem_serial") or None,
+    )
+    flash(f"{serial} OEM info updated", "ok")
+    return redirect(url_for("unit_detail", serial=serial))
+
+
 @app.route("/units/<serial>/parts/new", methods=["GET", "POST"])
 def unit_part_new(serial):
     conn = fl.get_conn()
@@ -252,7 +264,7 @@ def unit_hardware_import(serial):
         return redirect(url_for("unit_detail", serial=serial))
     text = upload.read().decode("utf-8", errors="replace")
     backfilled = fl.op_import_hardware_json(conn, serial, text)
-    flash("Imported hardware config" + (" (backfilled make/model)" if backfilled else ""), "ok")
+    flash("Imported hardware config" + (" (backfilled OEM info)" if backfilled else ""), "ok")
     return redirect(url_for("unit_detail", serial=serial))
 
 
@@ -345,6 +357,20 @@ def build_download(build_id):
         script_path.read_bytes(),
         mimetype="text/x-sh",
         headers={"Content-Disposition": f'attachment; filename="{build_id}.sh"'},
+    )
+
+
+@app.route("/builds/<build_id>/download-bundle")
+def build_download_bundle(build_id):
+    """Same script as build_download(), packaged with the installer_gui/
+    and doctor_gui/ source it embeds, so one download puts everything the
+    build needs on the USB stick."""
+    conn = fl.get_conn()
+    data = fl.op_build_bundle_targz(conn, build_id)
+    return Response(
+        data,
+        mimetype="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{build_id}-bundle.tar.gz"'},
     )
 
 

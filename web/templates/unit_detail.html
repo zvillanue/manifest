@@ -4,6 +4,7 @@
 <table class="kv">
   <tr><th>Line/tier</th><td>{{ unit['product_line'] }} / {{ unit['tier'] or '-' }}</td></tr>
   <tr><th>Make/model</th><td>{{ unit['oem_make'] or '-' }} {{ unit['oem_model'] or '-' }}</td></tr>
+  <tr><th>OEM serial number</th><td>{{ unit['oem_serial_number'] or '-' }}</td></tr>
   <tr><th>Build</th><td>{{ unit['build_id'] or '-' }}</td></tr>
   <tr><th>Status</th><td>{{ unit['status'] }}</td></tr>
   <tr><th>Mfg date</th><td>{{ unit['date_of_manufacture'] }}</td></tr>
@@ -108,6 +109,13 @@ database — not the serial, not hardware info. Look it up under "QR lookup".</p
     <label>Acquired from <input type="text" name="source" value="{{ unit['acquisition_source'] or '' }}" placeholder="eBay"></label>
     <label>Cost <input type="text" name="cost" value="{{ unit['acquisition_cost'] or '' }}" placeholder="110"></label>
     <button type="submit">Set acquisition info</button>
+  </form>
+
+  <form method="post" action="{{ url_for('unit_oem', serial=unit['serial']) }}">
+    <label>OEM make <input type="text" name="make" value="{{ unit['oem_make'] or '' }}" placeholder="Lenovo"></label>
+    <label>OEM model <input type="text" name="model" value="{{ unit['oem_model'] or '' }}" placeholder="ThinkPad T480"></label>
+    <label>OEM serial number <input type="text" name="oem_serial" value="{{ unit['oem_serial_number'] or '' }}" placeholder="off the case sticker"></label>
+    <button type="submit">Set OEM info</button>
   </form>
 
   <form method="post" action="{{ url_for('unit_hardware_import', serial=unit['serial']) }}" enctype="multipart/form-data">

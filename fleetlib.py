@@ -17,10 +17,12 @@ this vault — see FLEETCTL_DB_KEY / FLEETCTL_DB_KEY_FILE below.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import secrets
 import shutil
+import tarfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -40,6 +42,8 @@ WORDLIST_PATH = ROOT / "wordlist" / "eff_large_wordlist.txt"
 CHECKLISTS_DIR = ROOT / "checklists"
 PHOTOS_DIR = ROOT / "photos"
 POSTINSTALL_DIR = ROOT / "postinstall"
+INSTALLER_GUI_DIR = ROOT / "installer_gui"
+DOCTOR_GUI_DIR = ROOT / "doctor_gui"
 
 DB_KEY_ENV = "FLEETCTL_DB_KEY"
 DB_KEY_FILE_ENV = "FLEETCTL_DB_KEY_FILE"
@@ -143,6 +147,7 @@ def get_conn() -> sqlite3.Connection:
     _ensure_column(conn, "units", "acquisition_cost", "TEXT")
     _ensure_column(conn, "units", "buyer_name", "TEXT")
     _ensure_column(conn, "units", "buyer_email", "TEXT")
+    _ensure_column(conn, "units", "oem_serial_number", "TEXT")
     conn.executescript(SCHEMA)  # idempotent (CREATE TABLE IF NOT EXISTS) — picks up new tables
     return conn
 
@@ -167,6 +172,7 @@ CREATE TABLE IF NOT EXISTS units (
     build_id TEXT REFERENCES builds(build_id),
     oem_make TEXT,
     oem_model TEXT,
+    oem_serial_number TEXT,
     hardware_config_json TEXT,
     date_of_manufacture TEXT NOT NULL,
     acquisition_date TEXT,
@@ -354,6 +360,29 @@ def op_verify_build(conn: sqlite3.Connection, build_id: str) -> tuple[bool, str,
     return current == row["script_sha256"], row["script_sha256"], current
 
 
+def op_build_bundle_targz(conn: sqlite3.Connection, build_id: str) -> bytes:
+    """Bundles a registered build's post-install script together with the
+    installer_gui/ and doctor_gui/ source it already embeds — a convenience
+    download so everything's on one USB stick next to the script, not a
+    second installation path. Running the script is still what actually
+    installs both GUIs and adds their desktop shortcuts; nothing here
+    changes that."""
+    row = op_get_build(conn, build_id)
+    script_path = ROOT / row["postinstall_script_path"]
+    if not script_path.exists():
+        raise FleetError(f"Registered script missing on disk: {script_path}")
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        tar.add(script_path, arcname=f"{build_id}/{build_id}.sh")
+        for gui_dir, name in ((INSTALLER_GUI_DIR, "installer_gui"), (DOCTOR_GUI_DIR, "doctor_gui")):
+            for path in sorted(gui_dir.rglob("*")):
+                if not path.is_file() or "__pycache__" in path.parts:
+                    continue
+                tar.add(path, arcname=f"{build_id}/{name}/{path.relative_to(gui_dir)}")
+    return buf.getvalue()
+
+
 def list_postinstall_files() -> list[str]:
     if not POSTINSTALL_DIR.exists():
         return []
@@ -367,7 +396,7 @@ def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: 
                     model: str | None, build: str | None, mfg_date_str: str | None,
                     words: int, repurposed_from: str | None = None,
                     acquisition_date_str: str | None = None, acquisition_source: str | None = None,
-                    acquisition_cost: str | None = None) -> dict:
+                    acquisition_cost: str | None = None, oem_serial_number: str | None = None) -> dict:
     if build:
         exists = conn.execute("SELECT 1 FROM builds WHERE build_id = ?", (build,)).fetchone()
         if not exists:
@@ -388,17 +417,18 @@ def op_create_unit(conn: sqlite3.Connection, line: str, tier: int | None, make: 
 
     conn.execute(
         """INSERT INTO units (serial, qr_token, product_line, tier, build_id, oem_make, oem_model,
-               date_of_manufacture, acquisition_date, acquisition_source, acquisition_cost,
-               status, repurposed_from, temp_login_passphrase,
+               oem_serial_number, date_of_manufacture, acquisition_date, acquisition_source,
+               acquisition_cost, status, repurposed_from, temp_login_passphrase,
                temp_uefi_passphrase, temp_luks_passphrase, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (serial, qr_token, line, tier, build, make, model, mfg_date.isoformat(),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (serial, qr_token, line, tier, build, make, model, oem_serial_number, mfg_date.isoformat(),
          acquisition_date.isoformat() if acquisition_date else None, acquisition_source, acquisition_cost,
          "Acquired", repurposed_from, login_pp, uefi_pp, luks_pp, now, now),
     )
     conn.commit()
     return {
         "serial": serial, "line": line, "tier": tier, "make": make, "model": model,
+        "oem_serial_number": oem_serial_number,
         "build": build, "mfg_date": mfg_date.isoformat(),
         "login_passphrase": login_pp, "uefi_passphrase": uefi_pp, "luks_passphrase": luks_pp,
     }
@@ -416,6 +446,25 @@ def op_set_acquisition(conn: sqlite3.Connection, serial: str, date_str: str | No
         acquisition_date=acq_date.isoformat(), acquisition_source=source, acquisition_cost=cost,
     )
     return acq_date.isoformat()
+
+
+def op_set_oem_info(conn: sqlite3.Connection, serial: str, make: str | None, model: str | None,
+                     oem_serial_number: str | None) -> None:
+    """Set/update the OEM make, model, and/or serial number on an existing unit.
+    Unlike op_set_acquisition, this only overwrites fields actually passed in
+    (non-None) — these are usually filled in piecemeal (make/model at creation,
+    serial number later once someone reads the sticker on the case), and a
+    blank field shouldn't wipe out a value set earlier."""
+    op_get_unit(conn, serial)
+    fields = {}
+    if make is not None:
+        fields["oem_make"] = make
+    if model is not None:
+        fields["oem_model"] = model
+    if oem_serial_number is not None:
+        fields["oem_serial_number"] = oem_serial_number
+    if fields:
+        _touch(conn, serial, **fields)
 
 
 def op_add_part_replacement(
@@ -570,6 +619,9 @@ def op_import_hardware_json(conn: sqlite3.Connection, serial: str, json_text: st
     if not unit["oem_model"] and system.get("product_name"):
         fields["oem_model"] = system["product_name"]
         backfilled = True
+    if not unit["oem_serial_number"] and system.get("serial_number"):
+        fields["oem_serial_number"] = system["serial_number"]
+        backfilled = True
 
     _touch(conn, serial, **fields)
     return backfilled
@@ -640,7 +692,7 @@ def op_repurpose(conn: sqlite3.Connection, serial: str, new_line: str | None,
     tier = new_tier if new_tier is not None else old["tier"]
     return op_create_unit(
         conn, line, tier, old["oem_make"], old["oem_model"], build, None, words,
-        repurposed_from=old["serial"],
+        repurposed_from=old["serial"], oem_serial_number=old["oem_serial_number"],
     )
 
 
